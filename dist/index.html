@@ -1,131 +1,129 @@
 <!doctype html>
-<html lang="en">
+<html lang="id">
   <head>
-    <meta charset="UTF-8" />
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#101426" />
-    <meta name="description" content="Pulse Party is a quick, real-time color race for friends." />
-    <title>Pulse Party — Multiplayer color race</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23101426'/%3E%3Cpath d='M14 35h9l5-16 8 27 6-17h8' fill='none' stroke='%23d6ff58' stroke-linecap='round' stroke-linejoin='round' stroke-width='6'/%3E%3C/svg%3E" />
-    <link rel="preconnect" href="https://unpkg.com" />
+    <meta name="theme-color" content="#141515" />
+    <meta
+      name="description"
+      content="Dengar sound-nya. Tirukan gayanya. Adu suara bareng teman lewat kode room, tanpa login."
+    />
+    <title>MIMIC — Sound Battle</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23ff6038'/%3E%3Cpath d='M10 25V15l10 10 10-10v10' fill='none' stroke='%23141515' stroke-width='4'/%3E%3C/svg%3E"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <header class="topbar">
-        <a class="brand" href="./" aria-label="Pulse Party home">
-          <span class="brand-mark" aria-hidden="true">⌁</span>
-          <span>pulse party</span>
-        </a>
-        <div class="connection-state" id="connectionState" data-state="offline">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="connectionLabel">Not connected</span>
-        </div>
-      </header>
-
-      <section class="screen screen--active" id="homeScreen" aria-labelledby="homeTitle">
-        <div class="home-copy">
-          <p class="eyebrow"><span class="spark" aria-hidden="true">✦</span> real-time party game</p>
-          <h1 id="homeTitle">Spot it.<br /><em>Tap it.</em><br />Own the round.</h1>
-          <p class="lede">A tiny color race for 2–8 players. No login, no download, just a room code and fast fingers.</p>
-          <div class="how-to" aria-label="How to play">
-            <div class="how-to__step"><span>01</span><strong>Make a room</strong><small>Share the code</small></div>
-            <div class="how-to__line" aria-hidden="true"></div>
-            <div class="how-to__step"><span>02</span><strong>Find the color</strong><small>Tap the match</small></div>
-            <div class="how-to__line" aria-hidden="true"></div>
-            <div class="how-to__step"><span>03</span><strong>Beat the clock</strong><small>Score the point</small></div>
+    <header class="topbar">
+      <a href="./" class="brand" aria-label="MIMIC beranda"
+        ><span class="brand-icon">M</span>MIMIC<span class="brand-caption"
+          >SOUND BATTLE</span
+        ></a
+      >
+      <div class="top-actions">
+        <button
+          id="soundToggle"
+          class="icon-button"
+          aria-pressed="false"
+          title="Matikan efek suara"
+        >
+          ♫ <span>Suara aktif</span></button
+        ><span id="networkStatus" class="network">Belum di room</span>
+      </div>
+    </header>
+    <main id="app">
+      <section class="home">
+        <div class="intro">
+          <p class="eyebrow">
+            <span class="live-dot"></span> PANGGUNGNYA SIAP. SUARAMU?
+          </p>
+          <h1>SOUND SAMA.<br />NASIB <em>BEDA.</em></h1>
+          <p class="intro-text">
+            Dengar meme-nya. Tirukan nada, kata, dan gayanya.<br />Mirip banget
+            atau malah jadi bahan roasting?
+          </p>
+          <div class="score-strip">
+            <span><b>0–49</b> Kena roast</span
+            ><span><b>50–99</b> Dapat applause</span
+            ><span><b>100</b> LEGEND.</span>
           </div>
         </div>
-
-        <div class="home-card card-surface">
-          <div class="card-surface__topline"><span class="live-pill"><span></span> open to play</span><span class="players-note">2–8 players</span></div>
-          <div class="mini-board" aria-hidden="true">
-            <div class="mini-board__label">FIND THIS COLOR</div>
-            <div class="mini-target"></div>
-            <div class="mini-grid">
-              <i style="--c:#ff805d"></i><i style="--c:#a6e65f"></i><i style="--c:#67d9e8"></i><i style="--c:#f7c85b"></i>
-              <i style="--c:#b89bf5"></i><i style="--c:#ffb073"></i><i style="--c:#7ce3a1"></i><i style="--c:#fb6c93"></i>
+        <div class="entry-card">
+          <span class="eyebrow">01 / MASUK ARENA</span>
+          <h2>Ajak geng kamu.</h2>
+          <p>2–8 pemain · dari HP atau laptop</p>
+          <label for="nickname">Nama panggung</label
+          ><input
+            id="nickname"
+            maxlength="20"
+            placeholder="Misalnya: Raja Fals"
+            autocomplete="nickname"
+          /><button class="button primary" id="create">Buat room</button>
+          <div class="divider">sudah punya kode?</div>
+          <form id="joinForm">
+            <label for="code">Kode room</label>
+            <div class="input-row">
+              <input
+                id="code"
+                maxlength="6"
+                placeholder="ABC123"
+                autocomplete="off"
+              /><button class="button dark" type="submit">Gabung</button>
             </div>
-          </div>
-          <button class="primary-button" id="createRoomButton">Create a room <span aria-hidden="true">↗</span></button>
-          <div class="divider"><span>or join a room</span></div>
-          <form class="join-form" id="joinForm">
-            <label for="joinCode">Room code</label>
-            <div class="join-row">
-              <input id="joinCode" name="joinCode" maxlength="6" autocomplete="off" placeholder="e.g. LIME7" inputmode="text" />
-              <button class="secondary-button" type="submit">Join</button>
-            </div>
-            <p class="form-hint" id="homeNotice" role="status"></p>
           </form>
+          <button class="text-button" id="practice">
+            Coba latihan sendiri
+          </button>
+          <p class="small">
+            Pakai headset. Mikrofon aktif hanya saat kamu menekan Rekam.
+          </p>
         </div>
-      </section>
-
-      <section class="screen" id="lobbyScreen" aria-labelledby="lobbyTitle" hidden>
-        <div class="lobby-heading">
-          <div>
-            <p class="eyebrow"><span class="spark" aria-hidden="true">✦</span> waiting room</p>
-            <h2 id="lobbyTitle">Bring your people in.</h2>
-            <p class="lede">Share this code. When everyone’s here, the host starts the race.</p>
-          </div>
-          <button class="text-button" id="leaveLobbyButton">Leave room</button>
-        </div>
-        <div class="lobby-layout">
-          <div class="room-code-panel card-surface">
-            <span class="room-code-label">ROOM CODE</span>
-            <div class="room-code" id="roomCodeDisplay">—</div>
-            <button class="copy-button" id="copyCodeButton"><span aria-hidden="true">▣</span> Copy code</button>
-            <p class="copy-status" id="copyStatus" role="status"></p>
-          </div>
-          <div class="player-panel card-surface">
-            <div class="panel-heading"><h3>Players <span id="playerCount">0</span>/8</h3><span class="waiting-badge"><span class="status-dot"></span> live</span></div>
-            <div class="player-list" id="playerList"></div>
-            <div class="lobby-actions">
-              <button class="primary-button" id="startGameButton">Start the race <span aria-hidden="true">↗</span></button>
-              <p class="form-hint" id="lobbyNotice" role="status">Waiting for at least 2 players…</p>
+        <section class="sound-shelf">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">THE SOUNDBOARD</span>
+              <h2>Mulai dari sini.</h2>
             </div>
+            <span class="tag">3 KLIP LATIHAN ORISINAL</span>
           </div>
+          <div class="clip-grid" id="demoClips"></div>
+          <p class="small">
+            Paket latihan menggunakan suara sintetis orisinal. Tambahkan sound
+            meme atau influencer pilihanmu di room.
+          </p>
+        </section>
+        <div class="steps">
+          <p>
+            <b>01</b
+            ><span
+              ><strong>Dengarkan</strong> Tangkap nada & kata di
+              cuplikannya.</span
+            >
+          </p>
+          <p>
+            <b>02</b
+            ><span><strong>Tirukan</strong> Rekam sekali saat giliranmu.</span>
+          </p>
+          <p>
+            <b>03</b
+            ><span
+              ><strong>Terima nasib</strong> Skor 0–100. Reaksi satu room.</span
+            >
+          </p>
         </div>
       </section>
-
-      <section class="screen game-screen" id="gameScreen" aria-labelledby="gameTitle" hidden>
-        <div class="game-topline">
-          <div><span class="eyebrow">round <strong id="roundNumber">1</strong> / 8</span><h2 id="gameTitle">Find the pulse</h2></div>
-          <div class="game-clock" aria-label="Time remaining"><span id="timerValue">10.0</span><small>SEC</small></div>
-        </div>
-        <div class="target-row">
-          <span>Tap the card that matches</span>
-          <div class="target-swatch" id="targetSwatch" aria-label="Target color"></div>
-        </div>
-        <div class="game-layout">
-          <div class="board-wrap">
-            <div class="game-board" id="gameBoard" role="group" aria-label="Color choices"></div>
-            <div class="round-message" id="roundMessage" role="status"></div>
-          </div>
-          <aside class="scoreboard card-surface">
-            <div class="panel-heading"><h3>Scoreboard</h3><span class="round-live"><span class="status-dot"></span> playing</span></div>
-            <div class="score-list" id="scoreList"></div>
-            <div class="rule-card"><span class="rule-card__icon">⌁</span><div><strong>One tap only</strong><small>Fastest correct answer wins the point.</small></div></div>
-          </aside>
-        </div>
-      </section>
-
-      <section class="screen results-screen" id="resultsScreen" aria-labelledby="resultsTitle" hidden>
-        <div class="results-card card-surface">
-          <p class="eyebrow"><span class="spark" aria-hidden="true">✦</span> final pulse</p>
-          <div class="trophy" aria-hidden="true">✹</div>
-          <h2 id="resultsTitle">That was electric.</h2>
-          <p class="lede" id="resultsSubtitle">The room’s fastest eyes have been crowned.</p>
-          <div class="final-score-list" id="finalScoreList"></div>
-          <button class="primary-button" id="playAgainButton">Play again <span aria-hidden="true">↗</span></button>
-          <button class="text-button" id="leaveResultsButton">Leave room</button>
-        </div>
-      </section>
-
-      <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </main>
-
-    <footer class="footer-note">made for quick laughs &nbsp;·&nbsp; plays best with sound on</footer>
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script src="app.js"></script>
+    <footer>
+      <span>MIMIC <b>↗</b> MAKE SOME NOISE.</span
+      ><span>Host tetap membuka room selama permainan.</span>
+    </footer>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script
+      src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"
+      defer
+    ></script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>
