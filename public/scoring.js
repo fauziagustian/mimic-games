@@ -9,8 +9,12 @@ export function normalizeText(text = "") {
     .trim();
 }
 export function wordScore(reference, attempt) {
-  const a = normalizeText(reference).split(" ").filter(Boolean),
-    b = normalizeText(attempt).split(" ").filter(Boolean);
+  const tokens=text=>{
+    const normalized=normalizeText(text);
+    if(typeof Intl.Segmenter==='function')return [...new Intl.Segmenter(undefined,{granularity:'word'}).segment(normalized)].filter(x=>x.isWordLike).map(x=>x.segment);
+    return normalized.split(/\s+|(?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])/u).filter(Boolean);
+  };
+  const a = tokens(reference), b = tokens(attempt);
   if (!a.length) return 0;
   let row = Array.from({ length: b.length + 1 }, (_, i) => i);
   for (let i = 1; i <= a.length; i++) {
@@ -186,10 +190,10 @@ function align(a, b, distance) {
   }
   return previous[b.length] / Math.max(a.length, b.length);
 }
-export function reactionFor(score) {
-  return score === 100 ? "perfect" : score >= 50 ? "applause" : "roast";
+export function reactionFor(score, threshold=50) {
+  return score === 100 ? "perfect" : score >= threshold ? "applause" : "roast";
 }
-export function compareAudio(reference, attempt, expectedText, actualText) {
+export function compareAudio(reference, attempt, expectedText, actualText, rules={}) {
   const a = reference.frames,
     b = attempt.frames;
   if (attempt.silent || attempt.voiced < 3 || !b.length)
@@ -205,8 +209,10 @@ export function compareAudio(reference, attempt, expectedText, actualText) {
     };
   const av = a.filter((f) => f.pitch),
     bv = b.filter((f) => f.pitch);
+  const median=frames=>{const sorted=frames.map(f=>f.pitch).sort((x,y)=>x-y);return sorted[Math.floor(sorted.length/2)]||1;};
+  const offset=rules.profile==='party'?median(av)/median(bv):1;
   const pitchLoss = align(av, bv, (x, y) =>
-    Math.min(1, Math.abs(12 * Math.log2(x.pitch / y.pitch)) / 10),
+    Math.min(1, Math.abs(12 * Math.log2(x.pitch / (y.pitch*offset))) / 10),
   );
   const spectralLoss = align(a, b, (x, y) =>
     Math.min(
@@ -231,16 +237,10 @@ export function compareAudio(reference, attempt, expectedText, actualText) {
     timbre: clamp(100 * (1 - spectralLoss)),
     rhythm: clamp(100 * (1 - (0.55 * durationLoss + 0.45 * energyLoss))),
   };
-  const weighted =
-    0.3 * values.pitch +
-    0.35 * values.words +
-    0.2 * values.timbre +
-    0.15 * values.rhythm;
-  const perfect =
-    values.words === 100 &&
-    values.pitch >= 98 &&
-    values.timbre >= 98 &&
-    values.rhythm >= 98;
+  const weights=rules.profile==='party'?{pitch:60,words:0,timbre:0,rhythm:40}:rules.weights || {pitch:30, words:35, timbre:20, rhythm:15};
+  const weighted=Object.entries(weights).reduce((sum,[key,weight])=>sum+values[key]*weight/100,0);
+  const threshold=rules.perfectThreshold ?? 98;
+  const perfect=Object.entries(weights).every(([key,weight])=>weight===0 || values[key]>=(key==='words'?100:threshold));
   const total = perfect ? 100 : Math.min(99, Math.round(weighted));
   return {
     ...Object.fromEntries(
@@ -248,7 +248,7 @@ export function compareAudio(reference, attempt, expectedText, actualText) {
     ),
     total,
     transcript: actualText,
-    reaction: reactionFor(total),
+    reaction: reactionFor(total,rules.applauseThreshold ?? 50),
     note: perfect
       ? "Semua komponen mencapai ambang sempurna."
       : "Skor permainan berbasis analisis audio; mikrofon dan pembacaan kata dapat memengaruhi hasil.",

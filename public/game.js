@@ -1,3 +1,4 @@
+import {randomQueue} from './catalog.js';
 export const MAX_PLAYERS = 8;
 export function createRoomState(code, host) {
   return {
@@ -21,7 +22,7 @@ export function createRoomState(code, host) {
 export function addPlayer(state, player) {
   if (state.phase !== "lobby")
     throw new Error("Game sudah mulai. Tunggu host membuka ronde baru.");
-  if (state.players.length >= MAX_PLAYERS)
+  if (state.players.length >= (state.rules?.maxPlayers || MAX_PLAYERS))
     throw new Error("Room penuh: maksimal 8 pemain.");
   if (state.players.some((p) => p.id === player.id))
     throw new Error("Pemain sudah berada di room.");
@@ -44,14 +45,15 @@ export function beginGame(state, practice = false) {
   state.round = 1;
   state.turnIndex = 0;
   state.history = [];
+  state.queue = state.rankedMatch?.queue || randomQueue(state.selected,state.rounds);
   newTurn(state);
 }
 export function newTurn(state) {
   state.phase = "perform";
   state.turnId = crypto.randomUUID();
   state.result = null;
-  state.deadline = Date.now() + 90000;
-  state.clipId = state.selected[(state.round - 1) % state.selected.length];
+  state.deadline = Date.now() + (state.rules?.turnSeconds || 90)*1000;
+  state.clipId = state.queue?.[state.round-1] || state.selected[(state.round - 1) % state.selected.length];
 }
 export function acceptRecording(state, playerId, turnId) {
   if (

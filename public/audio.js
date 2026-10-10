@@ -138,20 +138,21 @@ export function drawWave(canvas, samples, color = "#141515") {
     c.fillRect(i * 6, (h - amp) / 2, 3, amp);
   }
 }
-export async function recordAudio({ seconds = 15, onLevel = () => {} } = {}) {
+export async function recordAudio({ seconds = 15, onLevel = () => {}, stream:armedStream } = {}) {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
     throw new Error(
       "Browser ini belum mendukung rekaman. Gunakan Chrome, Edge, atau Safari terbaru melalui HTTPS.",
     );
   await unlockAudio();
   stopAudio();
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const stream = armedStream || await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: false,
     },
   });
+  stream.getAudioTracks().forEach(t=>t.enabled=true);
   let recorder,
     interval,
     timer,
@@ -168,7 +169,7 @@ export async function recordAudio({ seconds = 15, onLevel = () => {} } = {}) {
     clearTimeout(timer);
     clearInterval(interval);
     source.disconnect();
-    stream.getTracks().forEach((t) => t.stop());
+    stream.getTracks().forEach((t) => armedStream ? t.enabled=false : t.stop());
   };
   try {
     const mime = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find(
@@ -257,7 +258,8 @@ export async function playReaction(kind, roastIndex = 0) {
       tone(220, 0, 0.3, 0.13, "sawtooth");
       tone(165, 0.3, 0.35, 0.13, "sawtooth");
       tone(110, 0.65, 0.7, 0.13, "sawtooth");
-      const r = await fetch(`audio/roast-${roastIndex % 3}.wav`);
+      if(roastIndex<0)return;
+      const r = await fetch(`/audio/roast-${roastIndex % 3}.wav`);
       if (r.ok && !muted)
         await playSamples(await decodeAudio(await r.arrayBuffer()));
     }
