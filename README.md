@@ -1,6 +1,6 @@
 # MIMIC — Sound Battle (web)
 
-An original browser-based sound imitation party game inspired by the *format* of voice party games, not affiliated with Mimic Party/FoliesAPP. No third-party game assets are included.
+An original browser-based sound imitation party game inspired by the *format* of voice party games, not affiliated with Mimic Party/FoliesAPP. No assets from that game are included. Avatars use the CC0 Kenney Mini Characters pack.
 
 ## Run locally
 
@@ -31,6 +31,16 @@ Open `http://127.0.0.1:4173/`. Preview uses a persistent local D1/R2 emulator. `
 
 ## Storage and access
 
+### 3D avatars
+
+Choose one of 12 Kenney avatars on the home screen or in the lobby. The server validates an allowlisted avatar ID, stores it in the room, and synchronizes it to other players. Choices lock when a match starts. Existing rooms without an avatar use the default character. There is no arbitrary model upload endpoint.
+
+Three.js is lazy-loaded for the decorative living-room stage. One canvas survives room UI refreshes. Independent cloned skeletons play idle, recording/replay gestures, nod/shake reactions, and a perfect-score/winner jump animation. Reactions follow the authoritative room state and server-adjusted clock; the player keeps the same seat throughout the match. These are body animations, **not facial animation or lip-sync**. The original primitive-geometry room does not use the supplied props whose public-use licenses are still unconfirmed.
+
+The **2D / 3D** button stores a device-local view preference. Save-Data defaults to 2D. Reduced-motion makes avatar poses static and disables confetti. WebGL/import/model failure falls back to thumbnails without blocking game controls, microphone recording or scoring. Rendering is capped at 30 FPS and device pixel ratio 1.5, and pauses when offscreen or the tab is hidden. Only characters present in the scene are requested; all 12 GLBs combined are approximately 3 MB. GPU resources are released on disabling 3D/page exit.
+
+Files: `client/stage-3d.js`, `client/stage-scene.js`, `public/avatars.js`, `public/avatar-ui.js`, `public/avatars.css`, and `public/models/kenney/`. The build bundles Three.js and includes `.glb`/PNG assets with their correct MIME types. To re-import the same pack from an authorized local ZIP: `node scripts/import-characters.mjs /path/to/kenney_mini-characters.zip`. Preserve the shared `Textures/colormap.png` and `License.txt`. Credits and asset decisions are in `ASSETS.md`.
+
 ### Community sounds (UGC)
 
 1. A signed-in creator uploads a 0.25–15 second clip (up to 8 MB before browser conversion to mono PCM16/16 kHz WAV). The server validates the actual WAV, bounds the request, rejects silence and computes the reference profile. Metadata includes a public creator name, exact transcript, category, language, source, permission details and explicit publication consent. No scraping or automatic licensing of viral/influencer audio is included.
@@ -47,6 +57,8 @@ Schema is in `db/schema.ts`; generated schema-only migrations are in `drizzle/`.
 
 ## Verified / not verified
 
-Automated local Worker integration: two-client shared clock, selection and snapshots, role/CSRF guards, duplicate submissions, R2 audio access, moderation, category/overall boards, seasonal isolation, upload validation. Mock microphone lifecycle tested. These tests use synthetic audio, not physical microphones. Browser visual QA was blocked by the browser-control policy in this session; mobile rendering, physical microphone timing and multi-device/network gameplay need real-device testing. No live voice chat, random sabotage wheel, 3D avatars, or team-versus mode is included in this release.
+Automated local Worker integration: two-client shared clock, selection and snapshots, role/CSRF guards, duplicate submissions, R2 audio access, moderation, category/overall boards, seasonal isolation, upload validation. Mock microphone lifecycle tested. These tests use synthetic audio, not physical microphones. Browser visual QA was blocked by the browser-control policy in this session; mobile rendering, physical microphone timing and multi-device/network gameplay need real-device testing. No live voice chat, random sabotage wheel, or team-versus mode is included in this release.
+
+Avatar checks cover all 12 actual GLB files, 32 clips per model, independent cloned skeletons, finite animated bounds, texture/thumbnail files, 1–8 stage positions, room synchronization, legacy fallback, authorization, invalid model paths and battle locking. An offline Blender render checks scene/asset composition only; it is not a screenshot of the browser or proof of WebGL/mobile performance.
 
 UGC integration coverage: identity and consent validation, private audio ownership, idempotent uploads, approval/rejection, casual-vs-ranked eligibility, multilingual/category filtering, inclusion in room snapshots, withdrawal, stale admin edits, concurrent moderation and upload quotas, no orphan R2 files on quota/duplicate losses, and pagination. These run against an isolated local Worker with D1/R2, not real production creator records. Public deployment is verified separately by Sites deployment status.

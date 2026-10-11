@@ -1,6 +1,8 @@
 import {fail,text,id,integer,limitedBody,pcmFromWav,digest} from './validation.js';
 import {randomQueue} from '../public/catalog.js';
 import {analyzeAudio,compareAudio} from '../public/scoring.js';
+import {DEFAULT_AVATAR,isAvatar} from '../public/avatars.js';
+const avatar=value=>{if(value===undefined)return DEFAULT_AVATAR;if(!isAvatar(value))fail(400,'Avatar tidak dikenal / Unknown avatar.');return value;};
 const json=value=>Response.json(value,{headers:{'Cache-Control':'no-store'}});
 const body=async req=>{try{return JSON.parse(new TextDecoder().decode(await limitedBody(req,10000)));}catch(e){if(e.status)throw e;fail(400,'Invalid request.');}};
 const newToken=()=>[...crypto.getRandomValues(new Uint8Array(32))].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -57,7 +59,7 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     if(!sounds.length)fail(400,'No sounds match this selection / Pilihan ini belum memiliki sound.');
     const token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),matchId=crypto.randomUUID(),code=roomCode(),name=text(b.name,20),rules={...catalog.rules,profile};
     const clips=[];for(const sound of sounds){const row=await db.one('SELECT data FROM sounds WHERE id=?',sound.id);clips.push({...sound,...JSON.parse(row.data)});}
-    const state={hostId:uid,phase:'lobby',players:[{id:uid,name,total:0,ready:false}],mode,profile,categoryId:b.categoryId,language:b.language,practice:!!b.practice,rules,clips,queue:[],round:0};
+    const state={hostId:uid,phase:'lobby',players:[{id:uid,name,total:0,ready:false,avatarId:avatar(b.avatarId)}],mode,profile,categoryId:b.categoryId,language:b.language,practice:!!b.practice,rules,clips,queue:[],round:0};
     const expires=Date.now()+7200000;
     await db.batch([
       db.statement('INSERT INTO matches(id,host_id,code,status,data,created_at,expires_at) VALUES(?,?,?,?,?,?,?)',matchId,uid,code,'lobby',JSON.stringify({room:true}),Date.now(),expires),
@@ -66,21 +68,26 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     ]);
     return json({code,token});
   }
-  const route=path.match(/^\/api\/rooms\/([A-Z2-9]{6})(?:\/(join|ready|start|take|audio|leave))?$/);if(!route)return null;
+  const route=path.match(/^\/api\/rooms\/([A-Z2-9]{6})(?:\/(join|avatar|ready|start|take|audio|leave))?$/);if(!route)return null;
   const code=route[1],action=route[2];let row=await db.one('SELECT * FROM rooms WHERE code=?',code);
   if(!row)fail(404,'Room not found / Room tidak ditemukan.');if(row.expires_at<Date.now())fail(410,'Room expired / Room kedaluwarsa.');
   const state=JSON.parse(row.data);if(state.mode==='ranked'&&!user)fail(401,'Sign in for ranked / Room kompetitif memerlukan login.');
   if(action==='join'&&method==='POST'){
     if(state.practice)fail(403,'Practice room / Room latihan.');
-    const b=await body(req),name=text(b.name,20),token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),tokenHash=await hashToken(token);
+    const b=await body(req),name=text(b.name,20),avatarId=avatar(b.avatarId),token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),tokenHash=await hashToken(token);
     const existing=await db.one('SELECT user_id FROM members WHERE match_id=? AND user_id=?',row.match_id,uid);if(existing)fail(409,'Already joined. Resume your existing room / Lanjutkan room yang sudah dibuka.');
-    await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'The match has started / Permainan sudah mulai.');if(s.players.some(p=>p.id===uid))fail(409,'This account has already joined.');if(s.players.length>=s.rules.maxPlayers)fail(409,'Room full / Room penuh.');s.players.push({id:uid,name,total:0,ready:false});});
+    await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'The match has started / Permainan sudah mulai.');if(s.players.some(p=>p.id===uid))fail(409,'This account has already joined.');if(s.players.length>=s.rules.maxPlayers)fail(409,'Room full / Room penuh.');s.players.push({id:uid,name,total:0,ready:false,avatarId});});
     await db.run('INSERT INTO members(id,match_id,user_id,name,peer_id) VALUES(?,?,?,?,?)',crypto.randomUUID(),row.match_id,uid,name,tokenHash);
     return json({code,token});
   }
   const token=req.headers.get('X-Room-Token');if(!token||!/^[a-f0-9]{64}$/.test(token))fail(401,'Room token required.');
   const player=await db.one('SELECT * FROM members WHERE match_id=? AND peer_id=?',row.match_id,await hashToken(token));
   if(!player||(state.mode==='ranked'&&player.user_id!==user?.id))fail(403,'Room access denied.');
+  if(action==='avatar'&&method==='POST'){
+    const b=await body(req),avatarId=avatar(b.avatarId);
+    await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'Avatar terkunci selama pertandingan / Avatar is locked during a match.');const p=s.players.find(p=>p.id===player.user_id);if(!p)fail(403,'Player left.');if(p.avatarId===avatarId)return false;p.avatarId=avatarId;});
+    return json({ok:true,avatarId});
+  }
   if(action==='ready'&&method==='POST'){
     await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'Match already started.');const p=s.players.find(p=>p.id===player.user_id);if(!p)fail(403,'Player left.');p.ready=true;});
     return json({ok:true});
