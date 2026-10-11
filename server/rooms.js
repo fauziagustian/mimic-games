@@ -2,6 +2,7 @@ import {fail,text,id,integer,limitedBody,pcmFromWav,digest} from './validation.j
 import {randomQueue} from '../public/catalog.js';
 import {analyzeAudio,compareAudio} from '../public/scoring.js';
 import {DEFAULT_AVATAR,isAvatar} from '../public/avatars.js';
+import {siteSettings} from './control.js';
 const avatar=value=>{if(value===undefined)return DEFAULT_AVATAR;if(!isAvatar(value))fail(400,'Avatar tidak dikenal / Unknown avatar.');return value;};
 const json=value=>Response.json(value,{headers:{'Cache-Control':'no-store'}});
 const body=async req=>{try{return JSON.parse(new TextDecoder().decode(await limitedBody(req,10000)));}catch(e){if(e.status)throw e;fail(400,'Invalid request.');}};
@@ -55,7 +56,13 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     const ip=await hashToken(req.headers.get('cf-connecting-ip')||'local'),bucket=`room-limit:${ip}:${Math.floor(Date.now()/3600000)}`;
     await db.run("INSERT INTO config(id,value) VALUES(?,'1') ON CONFLICT(id) DO UPDATE SET value=CAST(value AS INTEGER)+1",bucket);
     if(Number((await db.one('SELECT value FROM config WHERE id=?',bucket)).value)>30)fail(429,'Too many rooms. Try again later.');
-    const sounds=catalog.sounds.filter(s=>s.categoryId===b.categoryId&&(b.language==='all'||s.language===b.language)&&(mode!=='ranked'||s.ranked)&&s.duration<=catalog.rules.recordSeconds);
+    let sounds=catalog.sounds.filter(s=>s.categoryId===b.categoryId&&(b.language==='all'||s.language===b.language)&&(mode!=='ranked'||s.ranked)&&s.duration<=catalog.rules.recordSeconds);
+    if(b.soundIds!==undefined){
+      if(mode==='ranked')fail(400,'Kompetitif selalu acak / Ranked always uses random selection.');
+      if(!(await siteSettings(db)).settings.manualSoundSelectionEnabled)fail(403,'Pemilihan manual dinonaktifkan / Manual selection is disabled.');
+      if(!Array.isArray(b.soundIds)||!b.soundIds.length||b.soundIds.length>50||new Set(b.soundIds).size!==b.soundIds.length||b.soundIds.some(x=>typeof x!=='string'||!sounds.some(s=>s.id===x)))fail(400,'Pilih 1–50 sound aktif yang sesuai kategori/bahasa / Choose 1–50 eligible active sounds.');
+      sounds=sounds.filter(s=>b.soundIds.includes(s.id));
+    }
     if(!sounds.length)fail(400,'No sounds match this selection / Pilihan ini belum memiliki sound.');
     const token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),matchId=crypto.randomUUID(),code=roomCode(),name=text(b.name,20),rules={...catalog.rules,profile};
     const clips=[];for(const sound of sounds){const row=await db.one('SELECT data FROM sounds WHERE id=?',sound.id);clips.push({...sound,...JSON.parse(row.data)});}

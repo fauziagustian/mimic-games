@@ -6,15 +6,10 @@ import references from '../work/reference-seeds.json';
 import {roomRoutes} from './rooms.js';
 import {communityRoutes} from './community.js';
 import staticAssets from '../work/static-assets.json';
+import {identity,authorizeControl,controlRoutes,enforceOperations} from './control.js';
 
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const parsed=row=>row?JSON.parse(row.data):null;
-function identity(req,env){
-  const userId=req.headers.get('oai-authenticated-user-id'),email=req.headers.get('oai-authenticated-user-email');
-  if(!userId||!email)return null;
-  const admin=(env.ADMIN_EMAILS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean).includes(email.toLowerCase());
-  return {id:userId,email,admin};
-}
 function requireUser(user){if(!user)fail(401,'Sign in first / Masuk terlebih dahulu.');return user;}
 function requireAdmin(user){requireUser(user);if(!user.admin)fail(403,'Admin access only / Khusus admin.');}
 async function body(req,max=20000){try{return JSON.parse(new TextDecoder().decode(await limitedBody(req,max)));}catch(e){if(e instanceof HttpError)throw e;fail(400,'Invalid JSON.');}}
@@ -40,8 +35,8 @@ async function match(db,matchId){const row=await db.one('SELECT * FROM matches W
 async function member(db,m,user){requireUser(user);const row=await db.one('SELECT * FROM members WHERE match_id=? AND user_id=?',m.id,user.id);if(!row)fail(403,'You are not in this match.');return row;}
 async function matchView(db,m){return {id:m.id,code:m.code,status:m.status,categoryId:m.categoryId,language:m.language,rules:m.rules,queue:m.queue||[],clips:m.clips||[],expiresAt:m.expires_at,members:await db.all('SELECT peer_id AS peerId,name FROM members WHERE match_id=?',m.id)};}
 async function handle(req,env){
-  const u=new URL(req.url),p=u.pathname,method=req.method,user=identity(req,env);
-  if(p==='/api/me')return json({user:user?{id:user.id,admin:user.admin}:null,adminConfigured:!!env.ADMIN_EMAILS});
+  const u=new URL(req.url),p=u.pathname,method=req.method,user=p.startsWith('/api/')?await identity(req,env,database(env)):null;
+  if(p==='/api/me')return json({user:user?{id:user.id,admin:user.admin,role:user.role}:null,adminConfigured:!!env.ADMIN_EMAILS});
   if(!p.startsWith('/api/')){
     if(!['GET','HEAD'].includes(method))return new Response('Method not allowed',{status:405});
     const asset=staticAssets[p==='/'?'/index.html':['/admin','/leaderboard','/community'].includes(p)?p+'.html':p];
@@ -53,6 +48,9 @@ async function handle(req,env){
     const fetchSite=req.headers.get('sec-fetch-site');if(fetchSite&& !['same-origin','none'].includes(fetchSite))fail(403,'Cross-site write denied.');
   }
   const db=database(env);await seed(db);
+  if(p.startsWith('/api/admin/'))authorizeControl(p,user);
+  const control=await controlRoutes(req,env,db,user,catalog);if(control)return control;
+  await enforceOperations(req,db,user);
   if(p==='/api/rooms'||p.startsWith('/api/rooms/')){const response=await roomRoutes(req,env,db,user,catalog);if(response)return response;}
   if(p==='/api/catalog'&&method==='GET')return json(await catalog(db));
   if(p.startsWith('/api/admin/'))requireAdmin(user);

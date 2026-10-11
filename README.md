@@ -31,6 +31,12 @@ Open `http://127.0.0.1:4173/`. Preview uses a persistent local D1/R2 emulator. `
 
 ## Storage and access
 
+### Admin Control Center
+
+The `/admin` panel now opens on a real-data dashboard and includes dynamic website content, operational switches, room monitoring/closure, protected owner-managed Admin/Moderator roles, configuration version history, and a metadata-only JSON export. Existing sound/category/language/rule/UGC/ranked moderation editors are retained. All staff permissions are enforced on the server. Website and operation values are durable records in the existing `config` table; no schema migration is needed. Published content uses escaped plain text, never arbitrary HTML or JavaScript. Read [ADMIN-GUIDE.md](ADMIN-GUIDE.md) for access, maintenance behavior, version recovery and verification boundaries.
+
+Casual hosts can choose a 1–50 sound pool within the selected category/language/duration limits. The server snapshots and shuffles that pool for all players. Ranked games stay random, and operators can disable new custom pools without changing running matches.
+
 ### 3D avatars
 
 Choose one of 12 Kenney avatars on the home screen or in the lobby. The server validates an allowlisted avatar ID, stores it in the room, and synchronizes it to other players. Choices lock when a match starts. Existing rooms without an avatar use the default character. There is no arbitrary model upload endpoint.
