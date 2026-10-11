@@ -4,6 +4,7 @@ import {DEFAULT_RULES,LANGUAGES,CATEGORIES,SEED_SOUNDS,randomQueue} from '../pub
 import {analyzeAudio,compareAudio} from '../public/scoring.js';
 import references from '../work/reference-seeds.json';
 import {roomRoutes} from './rooms.js';
+import {communityRoutes} from './community.js';
 import staticAssets from '../work/static-assets.json';
 
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
@@ -30,7 +31,7 @@ const visibleSound=row=>{const {profile,audioHash,audioKey,...data}=parsed(row);
 async function catalog(db,admin=false){
   const [categories,languages,sounds,rule]=await Promise.all([
     db.all(`SELECT * FROM categories ${admin?'':'WHERE active=1'}`),db.all(`SELECT * FROM languages ${admin?'':'WHERE active=1'}`),
-    db.all(`SELECT s.* FROM sounds s JOIN categories c ON c.id=s.category_id JOIN languages l ON l.id=s.language ${admin?'':'WHERE s.active=1 AND c.active=1 AND l.active=1'} ORDER BY s.id`),
+    db.all(`SELECT s.* FROM sounds s JOIN categories c ON c.id=s.category_id JOIN languages l ON l.id=s.language ${admin?'':"WHERE s.active=1 AND c.active=1 AND l.active=1 AND NOT EXISTS(SELECT 1 FROM community_submissions u WHERE u.sound_id=s.id AND u.status<>'approved')"} ORDER BY s.id`),
     db.one('SELECT * FROM rules ORDER BY version DESC LIMIT 1')]);
   return {categories:categories.map(r=>({...parsed(r),id:r.id,active:!!r.active})),languages:languages.map(r=>({...parsed(r),id:r.id,active:!!r.active})),sounds:sounds.map(visibleSound),rules:{...parsed(rule),version:rule.version}};
 }
@@ -43,7 +44,7 @@ async function handle(req,env){
   if(p==='/api/me')return json({user:user?{id:user.id,admin:user.admin}:null,adminConfigured:!!env.ADMIN_EMAILS});
   if(!p.startsWith('/api/')){
     if(!['GET','HEAD'].includes(method))return new Response('Method not allowed',{status:405});
-    const asset=staticAssets[p==='/'?'/index.html':p==='/admin'||p==='/leaderboard'?p+'.html':p];
+    const asset=staticAssets[p==='/'?'/index.html':['/admin','/leaderboard','/community'].includes(p)?p+'.html':p];
     if(!asset)return new Response('Not found',{status:404});
     return new Response(method==='HEAD'?null:Uint8Array.from(atob(asset.data),c=>c.charCodeAt(0)),{headers:{'Content-Type':asset.mime,'Cache-Control':p.endsWith('.wav')?'public, max-age=3600':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'}});
   }
@@ -55,6 +56,7 @@ async function handle(req,env){
   if(p==='/api/rooms'||p.startsWith('/api/rooms/')){const response=await roomRoutes(req,env,db,user,catalog);if(response)return response;}
   if(p==='/api/catalog'&&method==='GET')return json(await catalog(db));
   if(p.startsWith('/api/admin/'))requireAdmin(user);
+  if(p==='/api/community'||p.startsWith('/api/community/')||p.startsWith('/api/admin/community')){const response=await communityRoutes(req,env,db,user);if(response)return response;}
   if(p==='/api/admin/catalog'&&method==='GET')return json(await catalog(db,true));
   if(p==='/api/admin/rules'&&method==='POST'){
     const b=await body(req),r=validateRules(b.rules),current=await db.one('SELECT version FROM rules ORDER BY version DESC LIMIT 1');
@@ -84,12 +86,20 @@ async function handle(req,env){
     if(old&&b.revision!==old.revision)fail(409,'Sound changed. Reload before saving.');
     if(!await db.one('SELECT id FROM categories WHERE id=?',b.categoryId)||!await db.one('SELECT id FROM languages WHERE id=?',b.language))fail(400,'Unknown category/language.');
     let audio=old?parsed(old):null;
+    if(audio?.ugcId&&b.uploadId)fail(400,'Audio UGC tidak dapat diganti. Kirim sound baru / Submit a new sound instead of replacing UGC audio.');
+    if(audio?.ugcId&&!await db.one("SELECT id FROM community_submissions WHERE id=? AND status='approved'",audio.ugcId))fail(409,'UGC sudah ditarik / This UGC was withdrawn.');
     if(b.uploadId){id(b.uploadId);const upload=await db.one('SELECT value FROM config WHERE id=?',`upload:${b.uploadId}`);if(!upload)fail(400,'Upload not found.');audio={...JSON.parse(upload.value),url:`/api/media/${b.uploadId}`};}
     if(!audio)fail(400,'Upload audio first.');
     if(typeof b.active!=='boolean'||typeof b.ranked!=='boolean')fail(400,'Sound status required.');
     const data={title:text(b.title,80),text:text(b.text,300),source:text(b.source,120),rights:text(b.rights,400),ranked:b.ranked,
       url:audio.url,audioKey:audio.audioKey||null,audioHash:audio.audioHash,profile:audio.profile,duration:audio.duration};
+    if(audio.ugcId)Object.assign(data,{ugcId:audio.ugcId,creatorName:audio.creatorName});
     const revision=(old?.revision||0)+1;
+    if(audio.ugcId){
+      const result=await db.run("UPDATE sounds SET category_id=?,language=?,data=?,active=?,revision=? WHERE id=? AND revision=? AND EXISTS(SELECT 1 FROM community_submissions WHERE id=? AND status='approved')",b.categoryId,b.language,JSON.stringify(data),+b.active,revision,b.id,b.revision,audio.ugcId);
+      if(!result.meta.changes)fail(409,'Sound berubah atau ditarik / Sound changed or was withdrawn.');
+      await db.batch([log(db,user,'sound.save',b.id)]);return json({id:b.id,revision});
+    }
     await db.batch([db.statement('INSERT INTO sounds(id,category_id,language,data,active,revision) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET category_id=excluded.category_id,language=excluded.language,data=excluded.data,active=excluded.active,revision=excluded.revision',b.id,b.categoryId,b.language,JSON.stringify(data),+b.active,revision),log(db,user,'sound.save',b.id)]);
     return json({id:b.id,revision});
   }

@@ -27,3 +27,11 @@ export const attempts = sqliteTable('attempts', {
 export const audit = sqliteTable('audit', {id:text('id').primaryKey(), actor:text('actor').notNull(),action:text('action').notNull(),target:text('target').notNull(),createdAt:integer('created_at').notNull()});
 export const rooms = sqliteTable('rooms',{code:text('code').primaryKey(),matchId:text('match_id').notNull(),revision:integer('revision').notNull().default(0),data:text('data').notNull(),expiresAt:integer('expires_at').notNull()});
 export const takes = sqliteTable('takes',{id:text('id').primaryKey(),matchId:text('match_id').notNull(),round:integer('round').notNull(),userId:text('user_id').notNull(),data:text('data').notNull(),audioKey:text('audio_key').notNull()},t=>[uniqueIndex('take_once').on(t.matchId,t.round,t.userId)]);
+export const communitySubmissions = sqliteTable('community_submissions', {
+  id:text('id').primaryKey(), ownerId:text('owner_id').notNull(), requestId:text('request_id').notNull(),
+  categoryId:text('category_id').notNull().references(()=>categories.id), language:text('language').notNull().references(()=>languages.id),
+  status:text('status').notNull().default('pending'), data:text('data').notNull(), audioKey:text('audio_key').notNull(),
+  soundId:text('sound_id').references(()=>sounds.id), createdAt:integer('created_at').notNull(),
+  reviewedAt:integer('reviewed_at'), reviewer:text('reviewer'), reviewNote:text('review_note').notNull().default(''),
+  actionToken:text('action_token'),
+},t=>[uniqueIndex('community_request').on(t.ownerId,t.requestId),uniqueIndex('community_sound').on(t.soundId),index('community_owner_created').on(t.ownerId,t.createdAt),index('community_status_created').on(t.status,t.createdAt)]);

@@ -15,6 +15,13 @@
       "when": 1791613696373,
       "tag": "0001_opposite_rumiko_fujikawa",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791680224253,
+      "tag": "0002_chemical_power_man",
+      "breakpoints": true
     }
   ]
 }
