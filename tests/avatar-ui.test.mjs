@@ -34,6 +34,8 @@ test('avatar UI: persistent canvas, safe restart, 2D fallback, lazy loading and 
   const button={dataset:{avatar:'female-f'},disabled:false};
   await root.querySelector('.avatar-options').onclick({target:{closest:()=>button}});assert.equal(preferredAvatar(),'female-f');assert.equal(state.players[0].avatarId,'female-f');
   const room={phase:'record',me:'a',players:state.players};controller.mount(target,{...state,room});assert.match(root.querySelector('.avatar-options').innerHTML,/disabled/);
+  controller.mount(target,{...state,room,showPicker:false});assert.equal(root.querySelector('.avatar-picker').hidden,true);
+  controller.mount(target,{...state,showPicker:true});assert.equal(root.querySelector('.avatar-picker').hidden,false);
   controller.dispose();assert.equal(disposed,3);assert.equal(target.child,null);
   let resolve;storage.set('mimic-3d','on');const pending=avatarStage({loadStage:()=>new Promise(r=>resolve=r)});pending.mount(target,state);target.child.querySelector('.view-toggle').onclick();resolve(module);await settle();assert.equal(made,3);pending.dispose();
   storage.delete('mimic-3d');navigator.connection.saveData=true;const saver=avatarStage({loadStage:async()=>module});saver.mount(target,state);await settle();assert.equal(made,3);assert.match(target.child.querySelector('.avatar-status').textContent,/ringan/);saver.dispose();

@@ -39,7 +39,8 @@ async function handle(req,env){
   if(p==='/api/me')return json({user:user?{id:user.id,admin:user.admin,role:user.role}:null,adminConfigured:!!env.ADMIN_EMAILS});
   if(!p.startsWith('/api/')){
     if(!['GET','HEAD'].includes(method))return new Response('Method not allowed',{status:405});
-    const asset=staticAssets[p==='/'?'/index.html':['/admin','/leaderboard','/community'].includes(p)?p+'.html':p];
+    const gamePage=['/','/choose-character','/create-match','/matching'].includes(p)||/^\/room\/[A-Z2-9]{6}$/.test(p);
+    const asset=staticAssets[gamePage?'/index.html':['/admin','/leaderboard','/community'].includes(p)?p+'.html':p];
     if(!asset)return new Response('Not found',{status:404});
     return new Response(method==='HEAD'?null:Uint8Array.from(atob(asset.data),c=>c.charCodeAt(0)),{headers:{'Content-Type':asset.mime,'Cache-Control':p.endsWith('.wav')?'public, max-age=3600':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'}});
   }

@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {isSequential,isMyTurn,turnKey,mayCapture,turnCue} from '../public/turns.js';
 import {visualPose} from '../public/avatars.js';
 import {runtime} from '../scripts/runtime.mjs';
+import {gameRoute} from '../public/game-routing.js';
 
 const clockRoom=()=>({turnMode:'sequential-v1',turnIndex:0,round:1,phase:'listen',activePlayerId:'a',me:'a',listenAt:1000,readyAt:6000,recordAt:10000,endAt:15000});
 test('Ready → 3 → 2 → 1 → Start boundaries derive from the shared server clock',()=>{
@@ -28,8 +29,8 @@ test('client markup and tick: escaped active name, cue text and capture only for
     document:{querySelector:s=>elements.get(s)||null,createElement:el},Date:{now:()=>now},
     t:id=>id,esc:s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),
     uiLanguage:()=> 'id',avatarStage:()=>({sync(){},detach(){},mount(){}}),avatarImage:()=>'',categoryName:()=> 'Drama',
-    isSequential,isMyTurn,turnKey,mayCapture,turnCue,drawWave(){},stopAudio(){},
-    sessionStorage:{getItem:k=>storage.get(k)},URLSearchParams,location:{origin:'https://mimic.test'},
+    isSequential,isMyTurn,turnKey,mayCapture,turnCue,gameRoute,drawWave(){},stopAudio(){},
+    sessionStorage:{getItem:k=>storage.get(k)},URLSearchParams,location:{origin:'https://mimic.test',href:'https://mimic.test/room/ABCDEF'},
   });
   vm.runInContext(source,context);
   context.fixture={...clockRoom(),players:[{id:'a',name:'<img onerror=x>',total:0},{id:'b',name:'Guest',total:0}],rules:{rounds:2,maxPlayers:8,version:1},results:[],revealIndex:0,queue:['s'],clips:[{id:'s',title:'Sound',text:'hello'}],submitted:[],revision:1,code:'ABCDEF',mode:'casual',profile:'party'};
@@ -41,6 +42,7 @@ test('client markup and tick: escaped active name, cue text and capture only for
   now=10000;vm.runInContext('tick();tick()',context);assert.equal(elements.get('#countdown').textContent,'Start');assert.equal(captures,1);
   vm.runInContext("room={...room,turnIndex:1,activePlayerId:'b'};renderRoom(true);tick();",context);
   assert.equal(captures,1);assert.match(elements.get('#app').innerHTML,/Mikrofonmu tidak merekam/);
+  vm.runInContext("room={...room,turnIndex:2,activePlayerId:'a'};location.href='https://mimic.test/choose-character';tick();",context);assert.equal(captures,1);
 });
 
 test('Worker: timed-out turns advance once, next round resets, practice ends, legacy matches stay compatible',async()=>{

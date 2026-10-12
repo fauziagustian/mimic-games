@@ -1,40 +1,119 @@
-import {api,t,escapeHTML as esc,categoryName,uiLanguage,signInLink,mountNavigation} from './platform.js';
+import {api,t,escapeHTML as esc,categoryName,uiLanguage,mountNavigation} from './platform.js';
 import {decodeAudio,playSamples,drawWave,recordAudio,wavBytes,stopAudio,unlockAudio,setMuted,playReaction} from './audio.js';
 import {requestTranscription,modelReady} from './transcriber.js';
 import {avatarStage,preferredAvatar,avatarImage} from './avatar-ui.js';
-import {loadSite,applyHomeContent} from './site-ui.js';
+import {loadSite} from './site-ui.js';
 import {soundPicker} from './sound-picker.js';
 import {isSequential,isMyTurn,turnKey,mayCapture,turnCue} from './turns.js';
+import {gameRoute,characterUrl,matchingUrl,roomUrl,parseRoomSession} from './game-routing.js';
+import {homePage,characterPage,createPage,matchingPage,activeRoomPage,pageHeading} from './game-pages.js';
 const $=s=>document.querySelector(s),app=$('#app'),tr=t,label=(id,en)=>esc(t(id,en));
 const avatars=avatarStage();
-let catalog,account,site,picker,session=null,room=null,mic=null,capture=null,polling=false,offset=0,muted=false,busy=false,lastRender='',pendingTake=null;
-const clips=new Map(),cues=new Set();let setup={categoryId:'drama',language:'all',mode:'casual',profile:'party'};
+let catalog,account,site,picker,session=null,room=null,mic=null,capture=null,polling=false,offset=0,muted=false,busy=false,lastRender='',pendingTake=null,creating=false,joining=false;
+const clips=new Map(),cues=new Set();
+let setup={categoryId:'drama',language:'all',mode:'casual',profile:'party'};
+const route=()=>gameRoute(location.href);
+const onRoomPage=()=>{const r=route();return !!session&&(r.page==='play'&&r.code===session.code||r.page==='matching'&&(!r.code||r.code===session.code));};
+const onPlayPage=()=>route().page==='play'&&route().code===session?.code;
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').classList.remove('show'),6500);}
 function bind(selector,fn){const el=$(selector);if(el)el.onclick=async()=>{try{await fn();}catch(e){toast(e.message);}};}
 async function roomApi(action='',options={}){return api(`/rooms/${session.code}${action?'/'+action:''}`,{...options,headers:{'X-Room-Token':session.token,...options.headers}});}
 async function loadClip(c){if(!clips.has(c.id)){const response=await fetch(c.url);if(!response.ok)throw new Error(tr('Sound gagal dimuat.','Sound could not load.'));clips.set(c.id,await decodeAudio(await response.arrayBuffer()));}return clips.get(c.id);}
-function name(){const value=$('#nickname').value.trim();if(!value)throw new Error(tr('Isi nama panggung dulu.','Choose a stage name.'));localStorage.setItem('mimic-name',value);return value;}
-function home(){
- if(!catalog)return;
- if($('#nickname'))localStorage.setItem('mimic-name',$('#nickname').value);
- avatars.detach();
- app.innerHTML=`<div class="play-layout"><section class="entry-card"><span class="eyebrow">SOUND BATTLE / WEB EDITION</span><h1 class="compact-title">ONE SOUND.<br><em>YOUR VERSION.</em></h1><p>${label('Dengar bersama. Tirukan bergiliran. Ketawakan hasilnya.','Listen together. Take turns imitating. Laugh at the playback.')}</p><label for="nickname">${label('Nama panggung','Stage name')}</label><input id="nickname" maxlength="20" autocomplete="nickname" placeholder="Raja Fals" value="${esc(localStorage.getItem('mimic-name')||'')}"><div class="mode-picker"><label><input type="radio" name="mode" value="casual" ${setup.mode==='casual'?'checked':''}> ${label('Santai','Casual')}</label><label><input type="radio" name="mode" value="ranked" ${setup.mode==='ranked'?'checked':''}> ${label('Kompetitif','Ranked')}</label></div><div class="filter-grid"><div><label for="category">${label('Kategori','Category')}</label><select id="category">${catalog.categories.map(c=>`<option value="${esc(c.id)}" ${setup.categoryId===c.id?'selected':''}>${esc(categoryName(c))}</option>`).join('')}</select></div><div><label for="language">${label('Bahasa sound','Sound language')}</label><select id="language"><option value="all">${label('Semua bahasa','All languages')}</option>${catalog.languages.map(l=>`<option value="${esc(l.id)}" ${setup.language===l.id?'selected':''}>${esc(l.label)}</option>`).join('')}</select></div></div><label for="profile">${label('Profil penilaian','Scoring profile')}</label><select id="profile" ${setup.mode==='ranked'?'disabled':''}><option value="party" ${setup.profile==='party'&&setup.mode!=='ranked'?'selected':''}>Party · ${label('pola nada & ritme','pitch pattern & rhythm')}</option><option value="precision" ${setup.profile==='precision'||setup.mode==='ranked'?'selected':''}>Precision · ${label('nada, kata, karakter & ritme','pitch, words, timbre & rhythm')}</option></select><p class="small" id="selectionInfo"></p>${setup.mode==='ranked'?`<div class="notice">${label('Skor pertandingan bersifat sementara. Rekaman disimpan untuk pemeriksaan admin; hanya hasil disahkan masuk leaderboard publik. Nama panggung dan skor tampil publik.','Match scores are provisional. Recordings are stored for admin review; only approved results enter the public leaderboard. Stage names and scores are public.')} ${!account.user?`<a href="${signInLink()}" target="_top">${label('Masuk dengan ChatGPT','Sign in with ChatGPT')}</a>`:''}</div>`:''}<button class="button primary full" id="create">${label('Buat room','Create room')}</button><button class="button light full" id="practice">${label('Latihan sendiri','Solo practice')}</button><div class="divider">${label('sudah punya kode?','already have a code?')}</div><form id="joinForm"><label for="code">${label('Kode room','Room code')}</label><div class="input-row"><input id="code" maxlength="6" autocomplete="off" placeholder="ABC123" value="${esc(new URLSearchParams(location.search).get('room')||'')}"><button class="button dark">${label('Gabung','Join')}</button></div></form>${session?`<button class="text-button" id="resume">${label('Lanjutkan room','Resume room')} ${esc(session.code)}</button>`:''}</section><section class="catalog-surface"><div class="section-heading"><div><span class="eyebrow">THE SOUNDBOARD</span><h2>${label('Pilih vibe kamu.','Pick your vibe.')}</h2></div><span class="tag">${catalog.sounds.length} SOUNDS</span></div><div class="category-tabs">${catalog.categories.map(c=>`<button class="category-chip ${setup.categoryId===c.id?'active':''}" data-category="${esc(c.id)}">${esc(categoryName(c))}</button>`).join('')}</div><div class="catalog-grid" id="soundCards"></div><div class="rules-banner"><span><b>01</b> ${label('Dengarkan','Listen')}</span><span><b>02</b> ${label('Satu take per giliran','One take per turn')}</span><span><b>03</b> ${label('Putar & nilai','Replay & score')}</span></div><div class="score-strip"><span><b>0–${catalog.rules.applauseThreshold-1}</b> Roast</span><span><b>${catalog.rules.applauseThreshold}–99</b> Applause</span><span><b>100</b> LEGEND</span></div><p class="small">${label('Sound awal adalah contoh sintetis orisinal, bukan rekaman influencer. Admin dapat menambahkan sound berizin. Gunakan headset.','Starter sounds are original synthetic examples, not influencer recordings. Admins can add licensed sounds. Use headphones.')}</p></section></div>`;
- const selection=()=>{setup={categoryId:$('#category').value,language:$('#language').value,mode:$('input[name="mode"]:checked').value,profile:$('#profile').value};const sounds=catalog.sounds.filter(c=>c.categoryId===setup.categoryId&&(setup.language==='all'||c.language===setup.language)&&(setup.mode!=='ranked'||c.ranked)&&c.duration<=catalog.rules.recordSeconds);$('#selectionInfo').textContent=tr(`${sounds.length} sound · diacak tanpa pengulangan sampai paket habis`,`${sounds.length} sounds · shuffled without repeats until the pack is exhausted`);$('#create').disabled=!sounds.length||setup.mode==='ranked'&&!account.user;$('#practice').disabled=!sounds.length;$('#soundCards').innerHTML=sounds.length?sounds.map(c=>`<article class="clip-card"><div class="clip-top"><span>${esc(catalog.languages.find(l=>l.id===c.language)?.label||c.language)}</span><button class="play-circle" data-play="${esc(c.id)}" aria-label="Play ${esc(c.title)}">▶</button></div><h3>${esc(c.title)}</h3><p class="quote-text">${esc(c.text)}</p><canvas class="waveform" data-wave="${esc(c.id)}"></canvas><span class="small">${c.duration.toFixed(1)}s · ${esc(c.source)}</span></article>`).join(''):`<div class="empty">${label('Belum ada sound untuk pilihan ini. Coba bahasa atau kategori lain.','No sounds in this selection. Try another language or category.')}</div>`;for(const c of sounds)loadClip(c).then(s=>drawWave($(`[data-wave="${c.id}"]`),s)).catch(()=>{});document.querySelectorAll('[data-play]').forEach(b=>b.onclick=async()=>{try{await playSamples(await loadClip(sounds.find(c=>c.id===b.dataset.play)));}catch(e){toast(e.message);}});};
- const refresh=()=>{selection();picker.render();};$('#category').onchange=refresh;$('#language').onchange=refresh;$('#profile').onchange=refresh;document.querySelectorAll('input[name="mode"]').forEach(el=>el.onchange=()=>{selection();home();});document.querySelectorAll('[data-category]').forEach(el=>el.onclick=()=>{setup.categoryId=el.dataset.category;home();});refresh();applyHomeContent(site);bind('#create',()=>create(false));bind('#practice',()=>create(true));bind('#resume',async()=>{await poll();if(room)renderRoom(true);});$('#joinForm').onsubmit=e=>{e.preventDefault();join().catch(e=>toast(e.message));};
- $('.catalog-surface').insertAdjacentHTML('beforeend',`<div class="notice"><b>COMMUNITY SOUNDS</b><br>${label('Punya sound sendiri? Kirim cuplikanmu untuk ditinjau admin dan dimainkan komunitas.','Got your own sound? Submit a clip for admin review and community play.')} <a href="/community">${label('Buka Komunitas →','Open Community →')}</a></div>`);
- avatars.mount($('.catalog-surface'),{room:null,players:[{id:'preview-you',name:tr('Kamu','You'),avatarId:preferredAvatar()},{id:'preview-left',name:'Luna',avatarId:'female-b'},{id:'preview-right',name:'Juno',avatarId:'male-f'}],offset:0,onError:e=>toast(e.message)});
+function name(){const value=($('#nickname')?.value??localStorage.getItem('mimic-name')??'').trim().slice(0,20);if(!value)throw new Error(tr('Isi nama panggung dulu.','Choose a stage name.'));localStorage.setItem('mimic-name',value);return value;}
+function navigate(url,replace=false){
+ const target=new URL(url,location.origin);if(target.origin!==location.origin||gameRoute(target.href).page==='unknown')return;
+ if(location.pathname+location.search!==target.pathname+target.search)history[replace?'replaceState':'pushState']({},'',target.pathname+target.search);
+ stopAudio();if(!onPlayPage())capture?.stop();lastRender='';renderScreen();window.scrollTo({top:0,behavior:'instant'});app.focus({preventScroll:true});
 }
-function saveSession(s){session=s;sessionStorage.setItem('mimic-room',JSON.stringify(s));cues.clear();lastRender='';}
-async function create(practice){const nickname=name();$('#create').disabled=true;try{saveSession(await api('/rooms',{method:'POST',body:{...setup,...picker.payload(),name:nickname,avatarId:preferredAvatar(),practice,mode:practice?'casual':setup.mode}}));await poll();}finally{if($('#create'))picker.render();}}
-async function join(){const nickname=name(),code=$('#code').value.trim().toUpperCase();if(!/^[A-Z2-9]{6}$/.test(code))throw new Error(tr('Kode room terdiri dari 6 huruf/angka.','Enter a six-character room code.'));saveSession(await api(`/rooms/${code}/join`,{method:'POST',body:{name:nickname,avatarId:preferredAvatar()}}));await poll();}
-async function ready(){const activeSession=session,current=room;busy=true;renderRoom(true);try{await unlockAudio();await Promise.all(current.clips.map(loadClip));if(current.profile==='precision'&&!modelReady){toast(tr('Menyiapkan pengenal kata. Unduhan pertama puluhan MB.','Preparing speech recognition. First download is tens of MB.'));await requestTranscription('load',null,p=>{if($('#readyStatus'))$('#readyStatus').textContent=p.progress?`${tr('Mengunduh','Downloading')} ${Math.round(p.progress)}%`:tr('Menyiapkan model…','Preparing model…');});}if(session!==activeSession)return;mic?.getTracks().forEach(t=>t.stop());const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});if(session!==activeSession){stream.getTracks().forEach(t=>t.stop());return;}mic=stream;mic.getAudioTracks().forEach(t=>t.enabled=false);if(room.phase==='lobby')await roomApi('ready',{method:'POST'});}finally{busy=false;renderRoom(true);}}
+function renderScreen(){
+ if(!catalog)return;
+ const r=route();app.dataset.page=r.page;avatars.detach();
+ if(r.page==='home'){home();return;}
+ if(r.page==='character'){chooseCharacter();return;}
+ if(r.page==='create'){
+   if(session){app.innerHTML=activeRoomPage(session);bind('#leave',()=>leave('/create-match'));return;}
+   if(!localStorage.getItem('mimic-name')?.trim()){navigate(characterUrl('create'),true);return;}
+   renderCreate();return;
+ }
+ if(r.page==='play'&&!session){navigate(matchingUrl(r.code),true);return;}
+ if(r.page==='matching'||r.page==='play'){
+   if(session&&r.code&&r.code!==session.code){app.innerHTML=activeRoomPage(session);bind('#leave',()=>leave(matchingUrl(r.code)));return;}
+   if(session){
+     if(!room){app.innerHTML=`<section class="panel"><h2>${label('Menyambungkan room…','Connecting to room…')}</h2><button class="button light" id="retryRoom">${label('Coba lagi','Retry')}</button></section>`;bind('#retryRoom',poll);return;}
+     const wanted=roomUrl(room);if(location.pathname+location.search!==wanted){navigate(wanted,true);return;}
+     renderRoom(true);return;
+   }
+   const operator=['owner','admin'].includes(account.user?.role);
+   app.innerHTML=matchingPage({code:r.code,name:localStorage.getItem('mimic-name')||'',avatarId:preferredAvatar(),paused:(!site.settings.acceptNewRooms||!site.settings.allowJoins)&&!operator});
+   // Keep invite context when changing identity.
+   const edit=$('.identity-summary a');if(edit)edit.href=characterUrl('matching',r.code);
+   $('#joinForm').onsubmit=e=>{e.preventDefault();join().catch(e=>toast(e.message));};return;
+ }
+ navigate('/',true);
+}
+function home(){
+ avatars.detach();app.innerHTML=homePage({site,session,name:localStorage.getItem('mimic-name')||''});
+}
+function chooseCharacter(){
+ const r=route(),inRoom=r.next==='lobby'&&session?.code===r.code&&room?.phase==='lobby';
+ if(r.next==='lobby'&&session?.code===r.code&&room&&room.phase!=='lobby'){navigate(roomUrl(room),true);return;}
+ const player=inRoom?room.players.find(p=>p.id===room.me):null;
+ app.innerHTML=characterPage({name:player?.name||localStorage.getItem('mimic-name')||'',inRoom,next:r.next,code:r.code});
+ avatars.mount($('#characterStage'),{room:inRoom?room:null,players:inRoom?room.players:[{id:'you',name:localStorage.getItem('mimic-name')||tr('Kamu','You'),avatarId:preferredAvatar()}],offset,showPicker:true,
+   onSelect:inRoom?async avatarId=>{await roomApi('avatar',{method:'POST',body:{avatarId}});await poll();avatars.sync({room,players:room.players,offset});}:undefined,onError:e=>toast(e.message)});
+ $('#characterForm').onsubmit=e=>{e.preventDefault();try{name();navigate(inRoom?roomUrl(room):r.next==='create'?'/create-match':matchingUrl(r.code));}catch(e){toast(e.message);}};
+}
+function renderCreate(){
+ app.innerHTML=createPage({catalog,setup,name:localStorage.getItem('mimic-name')||'',avatarId:preferredAvatar(),manual:!!picker.payload().soundIds});
+ const refresh=()=>{
+   setup={categoryId:$('#category').value,language:$('#language').value,mode:'casual',profile:$('#profile').value};
+   sessionStorage.setItem('mimic-setup',JSON.stringify(setup));
+   const sounds=catalog.sounds.filter(c=>c.categoryId===setup.categoryId&&(setup.language==='all'||c.language===setup.language)&&c.duration<=catalog.rules.recordSeconds);
+   $('#soundCount').textContent=' · '+sounds.length;
+   $('#soundCards').innerHTML=sounds.length?sounds.map(c=>`<article class="clip-card"><div class="clip-top"><span>${esc(catalog.languages.find(l=>l.id===c.language)?.label||c.language)}</span><button class="play-circle" data-play="${esc(c.id)}" aria-label="Play ${esc(c.title)}">▶</button></div><h3>${esc(c.title)}</h3><p class="quote-text">${esc(c.text)}</p><span class="small">${c.duration.toFixed(1)}s · ${esc(c.source)}</span></article>`).join(''):`<div class="empty">${label('Belum ada sound. Coba kategori atau bahasa lain.','No sounds here. Try another category or language.')}</div>`;
+   document.querySelectorAll('[data-play]').forEach(b=>b.onclick=async()=>{try{const samples=await loadClip(sounds.find(c=>c.id===b.dataset.play));if(route().page==='create')await playSamples(samples);}catch(e){toast(e.message);}});
+   picker.render();if(creating){$('#create').disabled=true;$('#practice').disabled=true;}
+ };
+ for(const id of ['category','language','profile'])$('#'+id).onchange=refresh;
+ refresh();bind('#create',()=>create(false));bind('#practice',()=>create(true));
+}
+function saveSession(s){session=s;room=null;pendingTake=null;sessionStorage.setItem('mimic-room',JSON.stringify(s));cues.clear();lastRender='';}
+async function create(practice){
+ if(creating)return;if(session)throw new Error(tr('Keluar dari room aktif terlebih dahulu.','Leave the current room first.'));
+ const nickname=name();creating=true;$('#create').disabled=true;$('#practice').disabled=true;
+ try{saveSession(await api('/rooms',{method:'POST',body:{...setup,...picker.payload(),name:nickname,avatarId:preferredAvatar(),practice,mode:'casual'}}));navigate(matchingUrl(session.code));await poll();}
+ finally{creating=false;if(route().page==='create')renderCreate();}
+}
+async function join(){
+ if(joining)return;
+ if(session)throw new Error(tr('Keluar dari room aktif terlebih dahulu.','Leave the current room first.'));
+ const code=$('#code').value.trim().toUpperCase();
+ if(!/^[A-Z2-9]{6}$/.test(code))throw new Error(tr('Kode room terdiri dari 6 huruf/angka.','Enter a six-character room code.'));
+ if(!localStorage.getItem('mimic-name')?.trim()){navigate(characterUrl('matching',code));return;}
+ const button=$('#joinForm button');joining=true;button.disabled=true;
+ try{saveSession(await api(`/rooms/${code}/join`,{method:'POST',body:{name:name(),avatarId:preferredAvatar()}}));navigate(matchingUrl(session.code));await poll();}
+ finally{joining=false;if(button.isConnected)button.disabled=false;}
+}
+async function ready(){const activeSession=session,current=room;busy=true;renderRoom(true);try{await unlockAudio();await Promise.all(current.clips.map(loadClip));if(current.profile==='precision'&&!modelReady){toast(tr('Menyiapkan pengenal kata. Unduhan pertama puluhan MB.','Preparing speech recognition. First download is tens of MB.'));await requestTranscription('load',null,p=>{if($('#readyStatus'))$('#readyStatus').textContent=p.progress?`${tr('Mengunduh','Downloading')} ${Math.round(p.progress)}%`:tr('Menyiapkan model…','Preparing model…');});}if(session!==activeSession||!onRoomPage())return;mic?.getTracks().forEach(t=>t.stop());const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});if(session!==activeSession||!onRoomPage()){stream.getTracks().forEach(t=>t.stop());return;}mic=stream;mic.getAudioTracks().forEach(t=>t.enabled=false);if(room.phase==='lobby')await roomApi('ready',{method:'POST'});}finally{busy=false;renderRoom(true);}}
 function playersMarkup(){
  const players=room.phase==='finished'?[...room.players].sort((a,b)=>b.total-a.total):room.players;
  return players.map(p=>{const index=room.players.findIndex(x=>x.id===p.id),active=isSequential(room)&&room.activePlayerId===p.id,done=room.results?.some(r=>r.playerId===p.id);
  const status=room.phase==='lobby'?(p.ready?tr('Siap','Ready'):tr('Belum siap','Not ready')):active?tr('Giliran sekarang','On stage now'):done?tr('Selesai','Done'):room.submitted.includes(p.id)?tr('Rekaman masuk','Take received'):isSequential(room)?tr('Menunggu giliran','Waiting for turn'):tr('Di arena','In the arena');
  return `<div class="player ${active?'active':''}"><span class="turn-number">${index+1}</span><span class="avatar">${avatarImage(p.avatarId)}</span><div class="player-info"><b>${esc(p.name)}${p.id===room.me?' · '+tr('kamu','you'):''}</b><span class="small">${esc(status)}</span></div><span class="player-score">${p.total}</span></div>`;}).join('');
 }
-function lobbyMarkup(){return `<span class="eyebrow">BACKSTAGE</span><h2>${esc(categoryName(catalog.categories.find(x=>x.id===room.categoryId)))}</h2><p>${label('Pemain tampil berurutan sesuai daftar. Setiap giliran: dengar sound → Ready → 3 → 2 → 1 → Start → satu take → putar hasil, lalu pemain berikutnya.','Players perform in list order. Each turn: listen → Ready → 3 → 2 → 1 → Start → one take → playback, then the next player.')}</p><div class="rules-banner"><span>${room.rules.rounds} ${label('ronde','rounds')}</span><span>${label('Maks.','Max.')} ${room.rules.recordSeconds}s</span><span>${room.clips.length} sounds</span></div><p>${room.profile==='party'?label('Party menilai pola nada relatif 60% dan ritme 40%, bukan warna suara bawaan.','Party scores relative pitch pattern 60% and rhythm 40%, not your natural voice.'):label(`Precision: nada ${room.rules.weights.pitch}%, kata ${room.rules.weights.words}%, karakter ${room.rules.weights.timbre}%, ritme ${room.rules.weights.rhythm}%.`,`Precision: pitch ${room.rules.weights.pitch}%, words ${room.rules.weights.words}%, timbre ${room.rules.weights.timbre}%, rhythm ${room.rules.weights.rhythm}%.`)}</p><div class="notice">${label('Tombol Siap meminta izin mikrofon dan menyiapkan rekaman otomatis setiap ronde. Audio hanya direkam selama hitungan rekam, kemudian dikirim ke server untuk diputar kepada pemain room. Mikrofon dinonaktifkan di luar giliran rekammu dan dilepas saat keluar.','Ready requests microphone access and arms automatic recording each round. Audio is only recorded during the recording window, then sent to the server for room playback. The microphone is disabled outside your recording turn and released when you leave.')}</div>${room.mode==='ranked'?`<p class="small">${label('Rekaman kompetitif juga disimpan untuk pemeriksaan admin. Skor langsung bukan skor resmi leaderboard.','Ranked recordings are also retained for admin review. Live scores are not official leaderboard scores.')}</p>`:''}<p id="readyStatus" role="status">${busy?label('Menyiapkan sound & mikrofon…','Preparing sounds & microphone…'):''}</p><button class="button green" id="ready" ${busy||mic?'disabled':''}>${mic?'✓ '+label('Mikrofon siap','Microphone armed'):label('Siap & izinkan mikrofon','Ready & allow microphone')}</button>${room.host?`<button class="button primary" id="start" ${room.players.some(p=>!p.ready)||room.players.length<(room.practice?1:2)?'disabled':''}>${label('Mulai battle','Start battle')}</button>`:`<p class="small">${label('Menunggu host memulai.','Waiting for the host to start.')}</p>`}`;}
+function lobbyMarkup(){
+ return `<span class="eyebrow">BACKSTAGE / ${room.profile.toUpperCase()}</span><h2>${esc(categoryName(catalog.categories.find(x=>x.id===room.categoryId)))}</h2><div class="rules-banner"><span>${room.rules.rounds} ${label('ronde','rounds')}</span><span>${label('Maks.','Max.')} ${room.rules.recordSeconds}s</span><span>${room.clips.length} sounds</span></div><p>${label('Ready → 3 → 2 → 1 → Start. Satu pemain, satu take. Bergiliran sesuai urutan lobby.','Ready → 3 → 2 → 1 → Start. One player, one take. Take turns in lobby order.')}</p><div class="notice">${label('Siap meminta izin mikrofon. Rekaman hanya aktif saat giliranmu, lalu dibagikan ke pemain room. Gunakan headset.','Ready requests microphone access. Recording is active only on your turn, then shared with room players. Use headphones.')}</div><p id="readyStatus" role="status">${busy?label('Menyiapkan sound & mikrofon…','Preparing sounds & microphone…'):mic?label('Mikrofon siap. Tunggu host memulai.','Microphone armed. Waiting for the host.'):''}</p><div class="match-actions"><button class="button green" id="ready" ${busy||mic?'disabled':''}>${mic?'✓ '+label('Mikrofon siap','Microphone armed'):label('Siap & izinkan mikrofon','Ready & allow microphone')}</button>${room.host?`<button class="button primary" id="start" ${room.players.some(p=>!p.ready)||room.players.length<(room.practice?1:2)||!mic?'disabled':''}>${label('Mulai battle','Start battle')} →</button>`:''}</div><details><summary>${label('Penilaian & privasi rekaman','Scoring & recording privacy')}</summary><p>${room.profile==='party'?label('Party: pola nada relatif 60% + ritme 40%.','Party: relative pitch pattern 60% + rhythm 40%.'):label(`Precision: nada ${room.rules.weights.pitch}%, kata ${room.rules.weights.words}%, karakter ${room.rules.weights.timbre}%, ritme ${room.rules.weights.rhythm}%.`,`Precision: pitch ${room.rules.weights.pitch}%, words ${room.rules.weights.words}%, timbre ${room.rules.weights.timbre}%, rhythm ${room.rules.weights.rhythm}%.`)}</p><p>${label('Take disimpan di server untuk playback room. Pembersihan otomatis belum tersedia. Jangan rekam ucapan sensitif. Skor merupakan rubrik permainan, bukan akurasi identitas suara.','Takes are stored on the server for room playback. Automatic deletion is not available. Do not record sensitive speech. Scores are a game rubric, not voice identity accuracy.')}</p></details>`;
+}
+function renderLobby(){
+ app.dataset.page='matching';app.innerHTML=`<section class="flow-page lobby-page">${pageHeading('03 / GAME MATCHING',label('GENG SUDAH SIAP?','IS THE CREW READY?'),label('Bagikan kode, tunggu teman, lalu semua tekan Siap.','Share the code, wait for friends, then everyone gets Ready.'))}<div class="lobby-layout"><section class="panel">${lobbyMarkup()}</section><aside class="stack"><section class="panel invite-panel"><span class="eyebrow">ROOM CODE</span><strong class="room-code">${esc(room.code)}</strong><button class="button light" id="copy">${label('Salin undangan','Copy invite')}</button></section><section class="panel"><div class="section-heading"><h3>${label('Urutan pemain','Player order')}</h3><span class="tag">${room.players.length}/${room.rules.maxPlayers}</span></div>${playersMarkup()}<a class="text-button" data-game-link href="${characterUrl('lobby',room.code)}">${label('Ganti karakter di halaman karakter','Edit on the character page')} →</a></section><button class="text-button" id="leave">${label('Keluar dari room','Leave room')}</button></aside></div></section>`;
+ bindRoomActions();
+}
+function bindRoomActions(r){
+ bind('#leave',()=>leave());bind('#newGame',()=>leave('/create-match'));bind('#ready',ready);
+ bind('#start',async()=>{await roomApi('start',{method:'POST'});await poll();});
+ bind('#copy',async()=>{await navigator.clipboard.writeText(location.origin+matchingUrl(room.code));toast(tr('Undangan disalin.','Invite copied.'));});
+ bind('#replay',()=>playTake(r));bind('#retryUpload',sendTake);
+}
 function resultMarkup(r){return `<span class="eyebrow">${label('PUTAR HASIL','THE REVEAL')} ${room.revealIndex+1}/${room.players.length} · ${esc(r.name)}</span><div class="result-score">${r.total}<small>/100</small></div><h2>${r.reaction==='perfect'?'100% LEGEND.':r.reaction==='applause'?'RESPECT.':tr('WADUH. KENA ROAST.','OUCH. ROASTED.')}</h2><p>${esc(room.rules[r.reaction+(uiLanguage()==='en'?'En':'Id')])}</p><div class="metrics">${(room.profile==='party'?[['pitch',tr('Pola nada','Pitch pattern')],['rhythm',tr('Ritme','Rhythm')]]:[['pitch',tr('Nada','Pitch')],['words',tr('Kata','Words')],['timbre',tr('Karakter','Timbre')],['rhythm',tr('Ritme','Rhythm')]]).map(([k,l])=>`<div class="metric"><span>${esc(l)}</span><b>${r[k]||0}/100</b></div>`).join('')}</div>${room.profile==='precision'?`<p class="transcript">${label('Terdengar:','Heard:')} ${esc(r.transcript||'—')}</p>`:''}<canvas class="waveform" id="stageWave"></canvas><button class="button light" id="replay" ${r.takeId?'':'disabled'}>▶ ${label('Putar ulang','Replay')}</button><p class="small">${r.rankedStatus==='pending'?label('Menunggu verifikasi admin.','Awaiting admin verification.'):r.rankedStatus==='rejected-replay'?label('Tidak masuk leaderboard: terdeteksi audio referensi/rekaman berulang.','Not ranked: reference or reused recording detected.'):''}</p>`;}
 function playStageMarkup(c){
  const active=room.players.find(p=>p.id===room.activePlayerId),mine=isMyTurn(room);
@@ -46,19 +125,38 @@ function playStageMarkup(c){
  ${pendingTake?.status==='error'&&pendingTake.round===room.round&&mine?`<button class="button light" id="retryUpload">${label('Kirim ulang rekaman yang sama','Retry the same recording')}</button>`:''}
  <p class="small">${label('Tetap buka tab ini. Tab di latar belakang dapat terlambat merekam.','Keep this tab open. Background tabs may miss the recording window.')}</p>`;
 }
-function renderRoom(force=false){if(!room)return;avatars.sync({room,players:room.players,offset});const key=JSON.stringify([room.revision,room.submitted,busy,!!mic,uiLanguage(),pendingTake?.status]);if(!force&&key===lastRender)return;lastRender=key;avatars.detach();const c=room.clips.find(c=>c.id===room.queue[room.round-1]),r=room.results?.[room.revealIndex],lobby=room.phase==='lobby',finished=room.phase==='finished';
- const stage=lobby?lobbyMarkup():finished?`<span class="eyebrow">THAT'S A WRAP / ${room.rules.rounds} ${label('RONDE','ROUNDS')}</span><h2 class="winner">${esc([...room.players].sort((a,b)=>b.total-a.total)[0]?.name)}</h2><p>${label('Lihat klasemen room. Siap untuk rematch?','Check the room standings. Ready for a rematch?')}</p>${room.mode==='ranked'?`<p>${label('Hasil resmi tampil setelah disahkan admin.','Official results appear after admin approval.')}</p><a class="button green" href="/leaderboard">Leaderboard</a>`:''}<button class="button primary" id="newGame">${label('Kembali ke arena','Back to the arena')}</button>`:room.phase==='reveal'&&r?resultMarkup(r):room.phase==='results'?`<span class="eyebrow">${label('HASIL RONDE','ROUND RESULTS')} ${room.round}</span><h2>${label('Tarik napas. Ronde berikutnya segera mulai.','Take a breath. Next round starts soon.')}</h2><div class="players">${room.results.map(r=>`<div class="player"><b>${esc(r.name)}</b><span class="player-score">${r.total}</span></div>`).join('')}</div><p id="countdown" class="big-count"></p>`:playStageMarkup(c);
- app.innerHTML=`<div class="page-title"><div><span class="eyebrow">${esc(room.code)} / ${room.profile.toUpperCase()} / ${room.mode.toUpperCase()}</span><h1>${lobby?tr('GENG SUDAH SIAP?','IS THE GANG READY?'):finished?tr('PANGGUNG MILIKMU.','TAKE A BOW.'):tr('SATU SOUND. SATU TAKE.','ONE SOUND. ONE TAKE.')}</h1></div><button class="button light" id="leave">${label('Keluar','Leave')}</button></div><div class="battle-grid"><section class="stage ${r?.total===100&&room.phase==='reveal'?'perfect':''}">${stage}</section><aside class="stack"><section class="panel"><div class="section-heading"><h3>${label('Pemain','Players')}</h3><span class="tag">${room.players.length}/${room.rules.maxPlayers}</span></div>${playersMarkup()}</section><section class="panel room-share"><span class="eyebrow">ROOM CODE</span><strong class="room-code">${esc(room.code)}</strong><button class="button green" id="copy">${label('Salin undangan','Copy invite')}</button></section><section class="panel"><h3>${label('Aturan tetap, permainan adil.','Same rules for everyone.')}</h3><p class="small">${label(`Musim ${room.rules.version}. Sound diacak tanpa mengulang sampai paket habis. Aturan terkunci selama pertandingan.`,`Season ${room.rules.version}. Sounds are shuffled without repetition until the pack is exhausted. Rules stay locked during this match.`)}</p><p class="small">${label('Skor adalah rubrik permainan, bukan persentase ilmiah kemiripan identitas suara.','Scores are a game rubric, not a scientific measure of voice identity.')}</p></section></aside></div>`;
- const avatarSlot=document.createElement('div');avatarSlot.className='battle-avatar-slot';$('.battle-grid').before(avatarSlot);avatars.mount(avatarSlot,{room,players:room.players,offset,onSelect:async avatarId=>{await roomApi('avatar',{method:'POST',body:{avatarId}});await poll();},onError:e=>toast(e.message)});
- bind('#leave',leave);bind('#newGame',leave);bind('#ready',ready);bind('#start',async()=>{await roomApi('start',{method:'POST'});await poll();});bind('#copy',async()=>{await navigator.clipboard.writeText(location.origin+'/?room='+room.code);toast(tr('Undangan disalin.','Invite copied.'));});bind('#replay',()=>playTake(r));bind('#retryUpload',sendTake);if(c&&room.phase==='listen')drawWave($('#stageWave'),clips.get(c.id),'#d2eb61');tick();
+function renderRoom(force=false){if(!room||!onRoomPage())return;if(room.phase==='lobby'){const key=JSON.stringify([room.revision,busy,!!mic,uiLanguage()]);if(!force&&key===lastRender)return;lastRender=key;avatars.detach();renderLobby();return;}app.dataset.page='play';avatars.sync({room,players:room.players,offset});const key=JSON.stringify([room.revision,room.submitted,busy,!!mic,uiLanguage(),pendingTake?.status]);if(!force&&key===lastRender)return;lastRender=key;avatars.detach();const c=room.clips.find(c=>c.id===room.queue[room.round-1]),r=room.results?.[room.revealIndex],lobby=room.phase==='lobby',finished=room.phase==='finished';
+ const stage=lobby?lobbyMarkup():finished?`<span class="eyebrow">THAT'S A WRAP / ${room.rules.rounds} ${label('RONDE','ROUNDS')}</span><h2 class="winner">${esc([...room.players].sort((a,b)=>b.total-a.total)[0]?.name)}</h2><p>${label('Lihat klasemen room. Siap untuk rematch?','Check the room standings. Ready for a rematch?')}</p><button class="button primary" id="newGame">${label('Kembali ke arena','Back to the arena')}</button>`:room.phase==='reveal'&&r?resultMarkup(r):room.phase==='results'?`<span class="eyebrow">${label('HASIL RONDE','ROUND RESULTS')} ${room.round}</span><h2>${label('Tarik napas. Ronde berikutnya segera mulai.','Take a breath. Next round starts soon.')}</h2><div class="players">${room.results.map(r=>`<div class="player"><b>${esc(r.name)}</b><span class="player-score">${r.total}</span></div>`).join('')}</div><p id="countdown" class="big-count"></p>`:playStageMarkup(c);
+
+ app.innerHTML=`<div class="game-topline"><span class="eyebrow">ROOM ${esc(room.code)} / ${room.profile.toUpperCase()}</span><button class="text-button" id="leave">${label('Keluar','Leave')}</button></div><div class="battle-grid gameplay-layout"><section class="stage ${r?.total===100&&room.phase==='reveal'?'perfect':''}">${stage}</section><aside class="stack"><div id="roomStage" class="room-stage-compact"></div><details class="panel game-standings" ${finished?'open':''}><summary>${label('Pemain & poin room','Players & room points')} · ${room.players.length}</summary>${playersMarkup()}</details></aside></div>`;
+ avatars.mount($('#roomStage'),{room,players:room.players,offset,showPicker:false,onError:e=>toast(e.message)});
+ bindRoomActions(r);if(c&&room.phase==='listen')drawWave($('#stageWave'),clips.get(c.id),'#d2eb61');tick();
 }
-async function poll(){if(!session||polling)return;polling=true;const activeSession=session,start=Date.now();try{const state=await roomApi();if(session!==activeSession)return;offset=state.serverTime-(start+Date.now())/2;room=state;$('#networkStatus').textContent=room.code;$('#networkStatus').classList.add('online');renderRoom();}catch(e){if(session!==activeSession)return;$('#networkStatus').textContent=tr('Menghubungkan ulang…','Reconnecting…');if([401,403,404,410].includes(e.status)){toast(e.message);capture?.stop();mic?.getTracks().forEach(t=>t.stop());mic=null;sessionStorage.removeItem('mimic-room');session=null;room=null;home();}}finally{polling=false;}}
-async function playTake(r){if(!r.takeId)return true;const activeSession=session,key=turnKey(room);const response=await fetch(`/api/rooms/${room.code}/audio?id=${r.takeId}`,{headers:{'X-Room-Token':session.token}});if(!response.ok)throw new Error(tr('Rekaman belum tersedia.','Recording unavailable.'));const samples=await decodeAudio(await response.arrayBuffer());if(session!==activeSession||!room||turnKey(room)!==key||room.phase!=='reveal')return false;drawWave($('#stageWave'),samples,'#ff6038');return playSamples(samples);}
-async function reaction(r){if(muted)return;const url=room.rules.reactionAudio?.[r.reaction];if(url){const res=await fetch(url);if(res.ok)return playSamples(await decodeAudio(await res.arrayBuffer()));}await playReaction(r.reaction,uiLanguage()==='en'?-1:room.revealIndex);}
-async function captureTake(){const current=room,activeSession=session,key=`${session.code}:${room.round}`;if(!mayCapture(room,Date.now()+offset)||!mic||Date.now()+offset>room.recordAt+1800){toast(tr('Terlewat: mikrofon belum siap atau tab terlambat.','Missed take: microphone not ready or tab was late.'));return;}sessionStorage.setItem('mimic-take:'+key,'started');try{capture=await recordAudio({seconds:Math.max(.3,(current.endAt-Date.now()-offset)/1000-.15),stream:mic,onLevel:frame=>drawWave($('#stageWave'),frame,'#ff6038')});if(session!==activeSession){capture.stop();return;}let samples=await capture.result;capture=null;if(session!==activeSession)return;samples=samples.slice(0,current.recordSeconds*16000);pendingTake={round:current.round,samples,status:'transcribing',transcript:current.profile==='precision'?null:''};await sendTake();}catch(e){if(session!==activeSession)return;toast(e.message);if(pendingTake)pendingTake.status='error';renderRoom(true);}}
+async function poll(){
+ if(!session||polling)return;polling=true;const activeSession=session,start=Date.now();
+ try{
+   const state=await roomApi();if(session!==activeSession)return;
+   offset=state.serverTime-(start+Date.now())/2;room=state;$('#networkStatus').textContent=room.code;$('#networkStatus').classList.add('online');
+   if(onRoomPage()){
+     const wanted=roomUrl(room);
+     if(location.pathname+location.search!==wanted)navigate(wanted,true);else renderRoom();
+   }else if(route().page==='character'&&route().next==='lobby'&&route().code===session.code){
+     if(room.phase!=='lobby')navigate(roomUrl(room),true);else avatars.sync({room,players:room.players,offset});
+   }
+ }catch(e){
+   if(session!==activeSession)return;$('#networkStatus').textContent=tr('Menghubungkan ulang…','Reconnecting…');
+   if([401,403,404,410].includes(e.status)){
+     const oldCode=session.code;toast(e.message);capture?.stop();mic?.getTracks().forEach(t=>t.stop());mic=null;stopAudio();sessionStorage.removeItem('mimic-room');session=null;room=null;pendingTake=null;
+     if(['play','matching'].includes(route().page))navigate(matchingUrl(oldCode),true);else renderScreen();
+   }
+ }finally{polling=false;}
+}
+async function playTake(r){if(!r.takeId)return true;const activeSession=session,key=turnKey(room);const response=await fetch(`/api/rooms/${room.code}/audio?id=${r.takeId}`,{headers:{'X-Room-Token':session.token}});if(!response.ok)throw new Error(tr('Rekaman belum tersedia.','Recording unavailable.'));const samples=await decodeAudio(await response.arrayBuffer());if(session!==activeSession||!onPlayPage()||!room||turnKey(room)!==key||room.phase!=='reveal')return false;drawWave($('#stageWave'),samples,'#ff6038');return playSamples(samples);}
+async function reaction(r){if(muted||!onPlayPage())return;const activeSession=session,key=turnKey(room),index=room.revealIndex,url=room.rules.reactionAudio?.[r.reaction];if(url){const res=await fetch(url);if(res.ok){const samples=await decodeAudio(await res.arrayBuffer());if(session===activeSession&&onPlayPage()&&turnKey(room)===key&&room.phase==='reveal'&&room.revealIndex===index&&!muted)return playSamples(samples);return;}}if(onPlayPage())await playReaction(r.reaction,uiLanguage()==='en'?-1:index);}
+async function captureTake(){const current=room,activeSession=session,key=`${session.code}:${room.round}`;if(!onPlayPage()||!mayCapture(room,Date.now()+offset)||!mic||Date.now()+offset>room.recordAt+1800){toast(tr('Terlewat: mikrofon belum siap atau tab terlambat.','Missed take: microphone not ready or tab was late.'));return;}sessionStorage.setItem('mimic-take:'+key,'started');try{capture=await recordAudio({seconds:Math.max(.3,(current.endAt-Date.now()-offset)/1000-.15),stream:mic,onLevel:frame=>drawWave($('#stageWave'),frame,'#ff6038')});if(session!==activeSession||!onPlayPage()){capture.stop();return;}let samples=await capture.result;capture=null;if(session!==activeSession)return;samples=samples.slice(0,current.recordSeconds*16000);pendingTake={round:current.round,samples,status:'transcribing',transcript:current.profile==='precision'?null:''};await sendTake();}catch(e){if(session!==activeSession)return;toast(e.message);if(pendingTake)pendingTake.status='error';renderRoom(true);}}
 async function sendTake(){if(!pendingTake||!room)return;const take=pendingTake,activeSession=session;take.status='uploading';try{if(take.round!==room.round||!isMyTurn(room)||Date.now()+offset>room.collectUntil)throw new Error(tr('Giliran sudah berakhir. Rekaman tidak dikirim.','This turn has ended. The recording was not sent.'));if(room.profile==='precision'&&take.transcript===null)take.transcript=await requestTranscription('transcribe',take.samples,()=>{},room.clips.find(c=>c.id===room.queue[take.round-1]).language);if(session!==activeSession)return;await roomApi(`take?round=${take.round}`,{method:'POST',headers:{'Content-Type':'audio/wav','X-Transcript':encodeURIComponent((take.transcript||'').slice(0,300))},body:wavBytes(take.samples)});take.status='sent';await poll();}catch(e){if(session!==activeSession)return;take.status='error';toast(e.message);renderRoom(true);}}
 function tick(){
- if(!room)return;
+ if(!room||!onPlayPage())return;
  const now=Date.now()+offset,c=room.clips.find(c=>c.id===room.queue[room.round-1]),el=$('#countdown'),key=turnKey(room),cue=turnCue(room,now),mine=isMyTurn(room);
  let count='',status='';
  if(cue==='listen'){count=tr('Dengarkan','Listen');status=tr('Sound referensi diputar sebelum hitungan giliran.','The reference plays before the turn countdown.');}
@@ -71,7 +169,7 @@ function tick(){
  const readyAt=isSequential(room)?room.readyAt:room.recordAt-1500;
  if(room.phase==='listen'&&now>=room.listenAt&&now<readyAt&&!cues.has('listen'+key)){
    cues.add('listen'+key);const activeSession=session;
-   loadClip(c).then(samples=>{if(session===activeSession&&room?.phase==='listen'&&turnKey(room)===key&&Date.now()+offset<readyAt)return playSamples(samples);}).catch(e=>toast(e.message));
+   loadClip(c).then(samples=>{if(session===activeSession&&onPlayPage()&&room?.phase==='listen'&&turnKey(room)===key&&Date.now()+offset<readyAt)return playSamples(samples);}).catch(e=>toast(e.message));
  }
  if(['listen','record'].includes(room.phase)&&now>=readyAt&&!cues.has('silence'+key)){cues.add('silence'+key);stopAudio();}
  if(mayCapture(room,now)&&!cues.has('record'+key)){
@@ -81,12 +179,41 @@ function tick(){
  if(room.phase==='reveal'&&now>=room.revealAt&&!cues.has('reveal'+room.round+':'+room.revealIndex)){
    cues.add('reveal'+room.round+':'+room.revealIndex);
    const r=room.results[room.revealIndex],round=room.round,index=room.revealIndex;
-   playTake(r).then(played=>{if(played!==false&&room?.phase==='reveal'&&room.round===round&&room.revealIndex===index)return reaction(r);}).catch(e=>toast(e.message));
+   playTake(r).then(played=>{if(played!==false&&onPlayPage()&&room?.phase==='reveal'&&room.round===round&&room.revealIndex===index)return reaction(r);}).catch(e=>toast(e.message));
  }
 }
-async function leave(){const previous=session;capture?.stop();mic?.getTracks().forEach(t=>t.stop());mic=null;capture=null;stopAudio();room=null;session=null;pendingTake=null;sessionStorage.removeItem('mimic-room');cues.clear();if(previous)api(`/rooms/${previous.code}/leave`,{method:'POST',headers:{'X-Room-Token':previous.token}}).catch(()=>{});home();}
-mountNavigation();window.addEventListener('languagechange',()=>{document.documentElement.lang=uiLanguage();room?renderRoom(true):home();});
-$('#soundToggle').onclick=()=>{muted=!muted;setMuted(muted);$('#soundToggle').textContent=muted?tr('Efek mati','Effects off'):tr('Efek aktif','Effects on');};window.addEventListener('beforeunload',()=>{capture?.stop();mic?.getTracks().forEach(t=>t.stop());});
-async function init(){try{[catalog,account,site]=await Promise.all([api('/catalog'),api('/me'),loadSite()]);picker=soundPicker({catalog,settings:site.settings,account,getSetup:()=>setup,onChange:home});const query=new URLSearchParams(location.search);if(!catalog.categories.some(c=>c.id===setup.categoryId))setup.categoryId=catalog.categories[0]?.id||'';if(catalog.categories.some(c=>c.id===query.get('category')))setup.categoryId=query.get('category');if(catalog.languages.some(l=>l.id===query.get('language')))setup.language=query.get('language');try{session=JSON.parse(sessionStorage.getItem('mimic-room'));}catch{}home();if(session)await poll();}catch(e){app.innerHTML=`<section class="panel"><h2>${label('Arena belum tersambung.','Arena unavailable.')}</h2><p>${esc(e.message)}</p><button class="button primary" id="retry">${label('Coba lagi','Retry')}</button></section>`;bind('#retry',init);}}
+async function leave(destination='/'){
+ const previous=session;capture?.stop();mic?.getTracks().forEach(t=>t.stop());mic=null;capture=null;stopAudio();room=null;session=null;pendingTake=null;sessionStorage.removeItem('mimic-room');cues.clear();
+ if(previous)api(`/rooms/${previous.code}/leave`,{method:'POST',headers:{'X-Room-Token':previous.token}}).catch(()=>{});
+ navigate(destination);
+}
+mountNavigation();window.addEventListener('languagechange',renderScreen);
+document.addEventListener('click',e=>{
+ const a=e.target.closest('a');if(!a||e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||a.target||a.hasAttribute('download'))return;
+ const url=new URL(a.href,location.origin);if(url.origin===location.origin&&gameRoute(url.href).page!=='unknown'){e.preventDefault();navigate(url.href);}
+});
+window.addEventListener('popstate',()=>{stopAudio();if(!onPlayPage())capture?.stop();lastRender='';renderScreen();});
+$('#soundToggle').onclick=()=>{muted=!muted;setMuted(muted);$('#soundToggle').textContent=muted?tr('Efek mati','Effects off'):tr('Efek aktif','Effects on');};
+window.addEventListener('beforeunload',()=>{capture?.stop();mic?.getTracks().forEach(t=>t.stop());});
+async function init(){
+ try{
+   [catalog,account,site]=await Promise.all([api('/catalog'),api('/me'),loadSite()]);
+   try{const saved=JSON.parse(sessionStorage.getItem('mimic-setup'));if(saved)setup={categoryId:saved.categoryId,language:saved.language,mode:'casual',profile:saved.profile==='precision'?'precision':'party'};}catch{}
+   const query=new URLSearchParams(location.search);
+   if(catalog.categories.some(c=>c.id===query.get('category')))setup.categoryId=query.get('category');
+   if(!catalog.categories.some(c=>c.id===setup.categoryId))setup.categoryId=catalog.categories[0]?.id||'';
+   if(catalog.languages.some(l=>l.id===query.get('language')))setup.language=query.get('language');
+   if(setup.language!=='all'&&!catalog.languages.some(l=>l.id===setup.language))setup.language='all';
+   sessionStorage.setItem('mimic-setup',JSON.stringify(setup));
+   picker=soundPicker({catalog,settings:site.settings,account,getSetup:()=>setup,onChange:renderCreate});
+   session=parseRoomSession(sessionStorage.getItem('mimic-room'));
+   if(session)await poll();
+   if(route().page==='home'&&route().code){navigate(matchingUrl(route().code),true);return;}
+   if(route().page==='home'&&query.has('category')){navigate('/create-match',true);return;}
+   renderScreen();
+ }catch(e){
+   app.innerHTML=`<section class="panel"><h2>${label('Arena belum tersambung.','Arena unavailable.')}</h2><p>${esc(e.message)}</p><button class="button primary" id="retry">${label('Coba lagi','Retry')}</button></section>`;bind('#retry',init);
+ }
+}
 init();setInterval(poll,1100);setInterval(tick,80);
 window.addEventListener('pagehide',event=>{if(!event.persisted)avatars.dispose();});

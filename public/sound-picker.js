@@ -21,7 +21,7 @@ export function soundPicker({catalog,settings,account,getSetup,onChange}){
         const count=manual?chosen.size:eligible.length,operator=['owner','admin'].includes(account.user?.role),paused=!settings.acceptNewRooms&&!operator;
         document.querySelector('#selectionInfo').textContent=t(`${count} sound dipilih · diacak tanpa pengulangan sampai paket habis`,`${count} sounds selected · shuffled without repeats until the pack is exhausted`);
         document.querySelector('#create').disabled=!count||paused||setup.mode==='ranked'&&(!account.user||!catalog.rules.rankedEnabled);document.querySelector('#practice').disabled=!count||paused;
-        document.querySelector('#joinForm button').disabled=(!settings.acceptNewRooms||!settings.allowJoins)&&!operator;
+        const join=document.querySelector('#joinForm button');if(join)join.disabled=(!settings.acceptNewRooms||!settings.allowJoins)&&!operator;
       };updateButtons();
     },
   };

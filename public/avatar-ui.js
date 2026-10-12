@@ -42,12 +42,13 @@ export function avatarStage({loadStage=()=>import('/stage-3d.js')}={}){
   }
   function draw(){
     q('h2').textContent=phaseTitle();
+    q('.avatar-picker').hidden=state.showPicker===false;
     fallback.innerHTML=(state.players||[]).map(p=>`<div class="fallback-player">${avatarImage(p.avatarId)}<b>${esc(p.name)}</b><span>${p.ready?'✓ ':''}${state.room?`${p.total||0} pts`:esc(t('Pratinjau','Preview'))}</span></div>`).join('');
     const own=state.room?.players.find(p=>p.id===state.room.me),selected=avatarById(own?.avatarId||preferredAvatar()),locked=selecting||state.room&&state.room.phase!=='lobby';
     q('.picker-heading').innerHTML=`<b>${esc(t('Karakter kamu','Your character'))} <span>· ${esc(selected.name)}</span></b><span>${esc(locked&&!selecting?t('Terkunci selama battle','Locked during battle'):t('12 karakter · pilih favoritmu','12 characters · pick your favorite'))}</span>`;
     q('.avatar-options').innerHTML=AVATARS.map(a=>`<button type="button" class="avatar-option" data-avatar="${a.id}" aria-label="${esc(t('Pilih','Choose'))} ${a.name}" aria-pressed="${a.id===selected.id}" ${locked?'disabled':''}>${avatarImage(a.id)}<span>${a.name}</span></button>`).join('');
     q('.avatar-options').onclick=async e=>{
-      const button=e.target.closest('[data-avatar]');if(!button||button.disabled||selecting)return;
+      const button=e.target.closest('[data-avatar]');if(!button||button.disabled||selecting||state.showPicker===false)return;
       const id=button.dataset.avatar;selecting=true;draw();
       try{await state.onSelect?.(id);remember('mimic-avatar',id);if(!state.room){state.players[0].avatarId=id;engine?.update(state);}}
       catch(e){state.onError?.(e);}
