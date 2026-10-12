@@ -59,7 +59,11 @@ export function avatarStage({loadStage=()=>import('/stage-3d.js')}={}){
   return {
     detach(){root.remove();},
     mount(target,next){if(dead)return;state=next;target.prepend(root);draw();engine?.update(state);engine?.resize();start();},
-    sync(next){state={...state,...next};engine?.update(state);},
+    sync(next){
+      const before=JSON.stringify([state.players,state.room?.phase,state.showPicker]);
+      state={...state,...next};engine?.update(state);
+      if(before!==JSON.stringify([state.players,state.room?.phase,state.showPicker]))draw();
+    },
     dispose(){dead=true;stop();root.remove();},
   };
 }

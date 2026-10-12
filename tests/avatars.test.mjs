@@ -63,7 +63,7 @@ test('Worker synchronizes avatar choices, rejects untrusted URLs and locks avata
   const mf=await runtime();const origin='https://mimic.test';
   const call=async(path,token,data)=>{const r=await mf.dispatchFetch(origin+path,{method:data?'POST':'GET',headers:{Origin:origin,...(token?{'X-Room-Token':token}:{})},body:data?JSON.stringify(data):undefined});return {status:r.status,value:await r.json()};};
   try{
-    const settings={name:'Host',categoryId:'drama',language:'all',mode:'casual'};
+    const settings={capacity:3,name:'Host',categoryId:'drama',language:'all',mode:'casual'};
     assert.equal((await call('/api/rooms',null,{...settings,avatarId:'https://evil.test/a.glb'})).status,400);
     const host=(await call('/api/rooms',null,{...settings,avatarId:'female-e'})).value,base='/api/rooms/'+host.code;
     assert.equal((await call(base+'/join',null,{name:'Invalid',avatarId:'../x'})).status,400);

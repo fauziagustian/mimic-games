@@ -20,8 +20,8 @@ test('avatar UI: persistent canvas, safe restart, 2D fallback, lazy loading and 
   Object.defineProperty(globalThis,'navigator',{value:{connection:{saveData:false}},configurable:true});
   globalThis.matchMedia=()=>({matches:false});
   const {avatarStage,preferredAvatar}=await import('../public/avatar-ui.js');
-  let made=0,disposed=0,updated=0,lastCanvas,callbacks;
-  const module={createStage(canvas,options){made++;lastCanvas=canvas;callbacks=options;return{update(){updated++;},resize(){},dispose(){disposed++;}};}};
+  let made=0,disposed=0,updated=0,lastCanvas,callbacks,lastStageState;
+  const module={createStage(canvas,options){made++;lastCanvas=canvas;callbacks=options;return{update(state){updated++;lastStageState=state;},resize(){},dispose(){disposed++;}};}};
   const controller=avatarStage({loadStage:async()=>module}),target=new Element(),state={room:null,players:[{id:'a',name:'<script>x</script>',avatarId:'male-a'}]};
   controller.mount(target,state);await settle();const root=target.child,canvas=lastCanvas;assert.equal(made,1);
   assert.match(root.querySelector('.avatar-fallback').innerHTML,/&lt;script&gt;/);
@@ -36,6 +36,10 @@ test('avatar UI: persistent canvas, safe restart, 2D fallback, lazy loading and 
   const room={phase:'record',me:'a',players:state.players};controller.mount(target,{...state,room});assert.match(root.querySelector('.avatar-options').innerHTML,/disabled/);
   controller.mount(target,{...state,room,showPicker:false});assert.equal(root.querySelector('.avatar-picker').hidden,true);
   controller.mount(target,{...state,showPicker:true});assert.equal(root.querySelector('.avatar-picker').hidden,false);
+  controller.sync({players:[{id:'a',name:'johnuzi',avatarId:'female-f'}]});
+  assert.match(root.querySelector('.avatar-fallback').innerHTML,/johnuzi/);
+  assert.doesNotMatch(root.querySelector('.avatar-fallback').innerHTML,/&lt;script&gt;/);
+  assert.equal(lastStageState.players[0].name,'johnuzi');assert.equal(made,3,'saving a name must not recreate the 3D engine');
   controller.dispose();assert.equal(disposed,3);assert.equal(target.child,null);
   let resolve;storage.set('mimic-3d','on');const pending=avatarStage({loadStage:()=>new Promise(r=>resolve=r)});pending.mount(target,state);target.child.querySelector('.view-toggle').onclick();resolve(module);await settle();assert.equal(made,3);pending.dispose();
   storage.delete('mimic-3d');navigator.connection.saveData=true;const saver=avatarStage({loadStage:async()=>module});saver.mount(target,state);await settle();assert.equal(made,3);assert.match(target.child.querySelector('.avatar-status').textContent,/ringan/);saver.dispose();

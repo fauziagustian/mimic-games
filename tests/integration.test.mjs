@@ -17,7 +17,7 @@ test('Worker: auth, catalog, rooms, one take, ranked review, leaderboard, snapsh
  const csrf=await call('/api/admin/categories',{who:'admin',method:'POST',data:{},headers:{Origin:'https://evil.test'}});assert.equal(csrf.status,403);
  assert.equal((await call('/api/admin/rules',{who:'admin',method:'POST',data:{version:1,rules:{...DEFAULT_RULES,weights:{pitch:50,words:50,timbre:50,rhythm:50}}}})).status,400);
  assert.equal((await call('/api/admin/rules',{who:'admin',method:'POST',data:{version:1,rules:{...DEFAULT_RULES,rounds:1}}})).status,200);
- const create=await call('/api/rooms',{method:'POST',data:{name:'Host',categoryId:'drama',language:'all',mode:'casual',profile:'party'}});assert.equal(create.status,200,JSON.stringify(create.value));const host=create.value,code=host.code;
+ const create=await call('/api/rooms',{method:'POST',data:{capacity:2,name:'Host',categoryId:'drama',language:'all',mode:'casual',profile:'party'}});assert.equal(create.status,200,JSON.stringify(create.value));const host=create.value,code=host.code;
  const join=await call(`/api/rooms/${code}/join`,{method:'POST',data:{name:'Guest'}});assert.equal(join.status,200);const guest=join.value;
  assert.equal((await call(`/api/rooms/${code}`)).status,401);
  assert.equal((await call(`/api/rooms/${code}/start`,{token:guest.token,method:'POST'})).status,403);
@@ -42,7 +42,9 @@ test('Worker: auth, catalog, rooms, one take, ranked review, leaderboard, snapsh
  a=(await call(`/api/rooms/${code}`,{token:guest.token})).value;assert.equal(a.phase,'reveal');assert.equal(a.revealIndex,1);assert.equal(a.results.length,2);assert.equal(a.players[0].total,hostTotal);
  assert.equal((await call(`/api/rooms/${code}/audio?id=${a.results[0].takeId}`,{token:guest.token})).status,200);
  assert.equal((await call('/api/rooms',{method:'POST',data:{name:'Ranked',categoryId:'drama',language:'all',mode:'ranked'}})).status,401);
- const ranked=(await call('/api/rooms',{who:'p1',method:'POST',data:{name:'Player one',categoryId:'drama',language:'indonesian',mode:'ranked',practice:true}})).value;
+ const ranked=(await call('/api/rooms',{who:'p1',method:'POST',data:{name:'Player one',categoryId:'drama',language:'indonesian',mode:'ranked',capacity:2}})).value;
+ const rankedGuest=(await call(`/api/rooms/${ranked.code}/join`,{who:'p2',method:'POST',data:{name:'Player two'}})).value;
+ await call(`/api/rooms/${ranked.code}/ready`,{who:'p2',token:rankedGuest.token,method:'POST'});
  await call(`/api/rooms/${ranked.code}/ready`,{who:'p1',token:ranked.token,method:'POST'});await call(`/api/rooms/${ranked.code}/start`,{who:'p1',token:ranked.token,method:'POST'});
  row=await db.prepare('SELECT * FROM rooms WHERE code=?').bind(ranked.code).first();state=JSON.parse(row.data);state.recordAt=Date.now()-10000;state.endAt=Date.now()-1000;state.collectUntil=Date.now()+150000;state.recordSeconds=15;await db.prepare('UPDATE rooms SET data=? WHERE code=?').bind(JSON.stringify(state),ranked.code).run();
  // A newly synthesized performance, not the reference bytes, exercises moderation.

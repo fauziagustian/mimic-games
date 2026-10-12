@@ -1,4 +1,5 @@
 /* Dedicated route layouts: one primary task on each screen. */
+.name-meta{display:flex;justify-content:space-between;gap:12px;margin:8px 0}.character-details #saveName{margin:10px 0 0}.character-details #nameStatus{min-height:40px;margin:10px 0}.character-details input[aria-invalid=true]{border-color:#be4d30}.match-gates{padding:18px;background:#eef1df;border:1px solid var(--line);border-radius:12px;margin:18px 0}.match-gates p{margin:8px 0}.match-gates .small{display:block}
 main:focus{outline:none}
 .game-home{max-width:860px;margin:10px auto 30px;text-align:center}
 .game-home h1{font-size:clamp(64px,9vw,110px);margin:24px 0}

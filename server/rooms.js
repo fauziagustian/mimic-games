@@ -4,6 +4,12 @@ import {analyzeAudio,compareAudio} from '../public/scoring.js';
 import {DEFAULT_AVATAR,isAvatar} from '../public/avatars.js';
 import {siteSettings} from './control.js';
 import {isSequential} from '../public/turns.js';
+import {stageName,roomCapacity,matchRequirements} from '../public/match-rules.js';
+const validName=value=>{const name=stageName(value);if(!name)fail(400,'Nama panggung wajib 1–10 karakter / Stage name must be 1–10 characters.');return name;};
+function startBattle(s){
+  if(!matchRequirements(s).canStart)fail(409,'Room wajib penuh, semua pemain siap, nama valid, dan sound tersedia / Fill every slot and get everyone ready with valid names and sounds.');
+  s.turnMode='sequential-v1';s.queue=randomQueue(s.clips.map(c=>c.id),s.rules.rounds);nextRound(s);
+}
 const avatar=value=>{if(value===undefined)return DEFAULT_AVATAR;if(!isAvatar(value))fail(400,'Avatar tidak dikenal / Unknown avatar.');return value;};
 const json=value=>Response.json(value,{headers:{'Cache-Control':'no-store'}});
 const body=async req=>{try{return JSON.parse(new TextDecoder().decode(await limitedBody(req,10000)));}catch(e){if(e.status)throw e;fail(400,'Invalid request.');}};
@@ -59,12 +65,14 @@ async function view(db,row,player){
   const s=JSON.parse(row.data),takes=await db.all('SELECT user_id,data FROM takes WHERE match_id=? AND round=?',row.match_id,s.round||0);
   return {...s,clips:s.clips.map(publicClip),revision:row.revision,code:row.code,me:player.user_id,host:s.hostId===player.user_id,serverTime:Date.now(),submitted:takes.map(t=>t.user_id),results:s.results||[]};
 }
-async function mutate(db,code,fn){
-  for(let i=0;i<6;i++){
+async function mutate(db,code,fn,after){
+  for(let i=0;i<16;i++){
     const row=await db.one('SELECT * FROM rooms WHERE code=?',code);if(!row)fail(404,'Room not found / Room tidak ditemukan.');
+    if(row.expires_at<Date.now())fail(410,'Room expired / Room kedaluwarsa.');
     const state=JSON.parse(row.data);const changed=await fn(state,row);
     if(changed===false)return row;
-    const result=await db.run('UPDATE rooms SET data=?,revision=revision+1 WHERE code=? AND revision=?',JSON.stringify(state),code,row.revision);
+    const data=JSON.stringify(state),write=db.statement('UPDATE rooms SET data=?,revision=revision+1 WHERE code=? AND revision=? AND expires_at>?',data,code,row.revision,Date.now());
+    const [result]=await db.batch([write,...(after?after(state,row,data):[])]);
     if(result.meta.changes)return {...row,data:JSON.stringify(state),revision:row.revision+1};
   }
   fail(409,'Room changed. Please try again.');
@@ -86,26 +94,54 @@ async function advance(db,code){return mutate(db,code,async(s,row)=>{
   if(s.phase==='results'&&now>=s.nextAt){nextRound(s);changed=true;}
   return changed;
 });}
+// One D1 transaction chooses/creates the queue room and inserts its membership.
+// Concurrent arrivals cannot create separate half-empty rooms or overfill a room.
+async function joinSolo(db,state,uid,tokenHash){
+  const now=Date.now(),expires=now+7200000,code=roomCode(),matchId=crypto.randomUUID(),memberId=crypto.randomUUID(),p=state.players[0];
+  state.queueKey=await hashToken(JSON.stringify([state.categoryId,state.language,state.mode,state.profile,state.rules,state.clips.map(c=>[c.id,c.revision])]));
+  const available="expires_at>? AND json_extract(data,'$.queueKey')=? AND json_extract(data,'$.phase')='lobby' AND json_array_length(data,'$.players')<8";
+  const args=[now,state.queueKey];
+  const notJoined="NOT EXISTS(SELECT 1 FROM members m JOIN rooms r ON r.match_id=m.match_id WHERE m.user_id=? AND r.expires_at>? AND json_extract(r.data,'$.matchType')='solo' AND json_extract(r.data,'$.phase')='lobby' AND EXISTS(SELECT 1 FROM json_each(r.data,'$.players') WHERE json_extract(value,'$.id')=m.user_id))";
+  const eligible=[uid,now];
+  const empty={...state,players:[]};
+  await db.batch([
+    db.statement(`INSERT INTO matches(id,host_id,code,status,data,created_at,expires_at) SELECT ?,?,?,'lobby',?,?,? WHERE NOT EXISTS(SELECT 1 FROM rooms WHERE ${available}) AND ${notJoined}`,matchId,uid,code,JSON.stringify({room:true}),now,expires,...args,...eligible),
+    db.statement('INSERT INTO rooms(code,match_id,revision,data,expires_at) SELECT ?,?,0,?,? WHERE EXISTS(SELECT 1 FROM matches WHERE id=?)',code,matchId,JSON.stringify(empty),expires,matchId),
+    db.statement(`INSERT INTO members(id,match_id,user_id,name,peer_id) SELECT ?,match_id,?,?,? FROM rooms WHERE ${available} AND ${notJoined} ORDER BY expires_at,code LIMIT 1`,memberId,uid,p.name,tokenHash,...args,...eligible),
+    db.statement("UPDATE rooms SET data=json_set(data,'$.players',json_insert(json_extract(data,'$.players'),'$[#]',json(?)),'$.hostId',CASE WHEN json_array_length(data,'$.players')=0 THEN ? ELSE json_extract(data,'$.hostId') END),revision=revision+1 WHERE match_id=(SELECT match_id FROM members WHERE id=?)",JSON.stringify(p),uid,memberId)
+  ]);
+  const joined=await db.one('SELECT r.code FROM rooms r JOIN members m ON m.match_id=r.match_id WHERE m.id=?',memberId);
+  if(!joined)fail(409,'Kamu sudah ada di antrean solo. Lanjutkan room sebelumnya / Resume your existing solo queue.');
+  return joined.code;
+}
 export async function roomRoutes(req,env,db,user,getCatalog){
   const url=new URL(req.url),path=url.pathname,method=req.method;
   if(path==='/api/rooms'&&method==='POST'){
     const b=await body(req),catalog=await getCatalog(db),mode=b.mode==='ranked'?'ranked':'casual',profile=mode==='ranked'?'precision':b.profile==='precision'?'precision':'party';
+    const matchType=b.matchType??'custom';if(!['custom','solo'].includes(matchType))fail(400,'Invalid match type.');
+    if(b.practice)fail(400,'Latihan solo sudah diganti matchmaking 8 pemain / Solo now requires 8 players.');
+    const capacity=matchType==='solo'?8:integer(b.capacity??catalog.rules.maxPlayers,2,8);
+    if(matchType==='solo'&&b.capacity!==undefined&&b.capacity!==8)fail(400,'Solo wajib 8 pemain / Solo requires 8 players.');
+    if(matchType==='solo'&&!(await siteSettings(db)).settings.allowJoins&&!['owner','admin'].includes(user?.role))fail(503,'Matchmaking sedang dijeda / Matchmaking is paused.');
     if(mode==='ranked'&&!user)fail(401,'Sign in for ranked / Masuk untuk mode kompetitif.');
     if(mode==='ranked'&&!catalog.rules.rankedEnabled)fail(409,'Ranked is paused.');
-    const ip=await hashToken(req.headers.get('cf-connecting-ip')||'local'),bucket=`room-limit:${ip}:${Math.floor(Date.now()/3600000)}`;
+    // Solo counts individual queue entries; allow multiple 8-player rematches on a shared Wi-Fi.
+    const ip=await hashToken(req.headers.get('cf-connecting-ip')||'local'),bucket=`${matchType==='solo'?'solo':'room'}-limit:${ip}:${Math.floor(Date.now()/3600000)}`;
     await db.run("INSERT INTO config(id,value) VALUES(?,'1') ON CONFLICT(id) DO UPDATE SET value=CAST(value AS INTEGER)+1",bucket);
-    if(Number((await db.one('SELECT value FROM config WHERE id=?',bucket)).value)>30)fail(429,'Too many rooms. Try again later.');
+    if(Number((await db.one('SELECT value FROM config WHERE id=?',bucket)).value)>(matchType==='solo'?240:30))fail(429,'Terlalu banyak permintaan match. Coba lagi nanti / Too many match requests. Try again later.');
     let sounds=catalog.sounds.filter(s=>s.categoryId===b.categoryId&&(b.language==='all'||s.language===b.language)&&(mode!=='ranked'||s.ranked)&&s.duration<=catalog.rules.recordSeconds);
     if(b.soundIds!==undefined){
+      if(matchType==='solo')fail(400,'Solo menggunakan sound acak sesuai kategori / Solo uses a random category pool.');
       if(mode==='ranked')fail(400,'Kompetitif selalu acak / Ranked always uses random selection.');
       if(!(await siteSettings(db)).settings.manualSoundSelectionEnabled)fail(403,'Pemilihan manual dinonaktifkan / Manual selection is disabled.');
       if(!Array.isArray(b.soundIds)||!b.soundIds.length||b.soundIds.length>50||new Set(b.soundIds).size!==b.soundIds.length||b.soundIds.some(x=>typeof x!=='string'||!sounds.some(s=>s.id===x)))fail(400,'Pilih 1–50 sound aktif yang sesuai kategori/bahasa / Choose 1–50 eligible active sounds.');
       sounds=sounds.filter(s=>b.soundIds.includes(s.id));
     }
     if(!sounds.length)fail(400,'No sounds match this selection / Pilihan ini belum memiliki sound.');
-    const token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),matchId=crypto.randomUUID(),code=roomCode(),name=text(b.name,20),rules={...catalog.rules,profile};
-    const clips=[];for(const sound of sounds){const row=await db.one('SELECT data FROM sounds WHERE id=?',sound.id);clips.push({...sound,...JSON.parse(row.data)});}
-    const state={hostId:uid,phase:'lobby',players:[{id:uid,name,total:0,ready:false,avatarId:avatar(b.avatarId)}],mode,profile,categoryId:b.categoryId,language:b.language,practice:!!b.practice,rules,clips,queue:[],round:0};
+    const token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),matchId=crypto.randomUUID(),code=roomCode(),name=validName(b.name),rules={...catalog.rules,profile,maxPlayers:capacity};
+    const clips=[];for(const sound of sounds){const row=await db.one('SELECT data FROM sounds WHERE id=?',sound.id);clips.push({...JSON.parse(row.data),...sound});}
+    const state={hostId:uid,phase:'lobby',players:[{id:uid,name,total:0,ready:false,avatarId:avatar(b.avatarId)}],mode,profile,categoryId:b.categoryId,language:b.language,matchType,capacity,practice:false,rules,clips,queue:[],round:0};
+    if(matchType==='solo')return json({code:await joinSolo(db,state,uid,await hashToken(token)),token});
     const expires=Date.now()+7200000;
     await db.batch([
       db.statement('INSERT INTO matches(id,host_id,code,status,data,created_at,expires_at) VALUES(?,?,?,?,?,?,?)',matchId,uid,code,'lobby',JSON.stringify({room:true}),Date.now(),expires),
@@ -114,36 +150,46 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     ]);
     return json({code,token});
   }
-  const route=path.match(/^\/api\/rooms\/([A-Z2-9]{6})(?:\/(join|avatar|ready|start|take|audio|leave))?$/);if(!route)return null;
+  const route=path.match(/^\/api\/rooms\/([A-Z2-9]{6})(?:\/(join|name|avatar|ready|start|take|audio|leave))?$/);if(!route)return null;
   const code=route[1],action=route[2];let row=await db.one('SELECT * FROM rooms WHERE code=?',code);
   if(!row)fail(404,'Room not found / Room tidak ditemukan.');if(row.expires_at<Date.now())fail(410,'Room expired / Room kedaluwarsa.');
   const state=JSON.parse(row.data);if(state.mode==='ranked'&&!user)fail(401,'Sign in for ranked / Room kompetitif memerlukan login.');
   if(action==='join'&&method==='POST'){
-    if(state.practice)fail(403,'Practice room / Room latihan.');
-    const b=await body(req),name=text(b.name,20),avatarId=avatar(b.avatarId),token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),tokenHash=await hashToken(token);
+    if(state.practice||state.matchType==='solo')fail(403,'Gunakan antrean solo untuk room ini / Use solo matchmaking for this room.');
+    const b=await body(req),name=validName(b.name),avatarId=avatar(b.avatarId),token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),tokenHash=await hashToken(token);
     const existing=await db.one('SELECT user_id FROM members WHERE match_id=? AND user_id=?',row.match_id,uid);if(existing)fail(409,'Already joined. Resume your existing room / Lanjutkan room yang sudah dibuka.');
-    await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'The match has started / Permainan sudah mulai.');if(s.players.some(p=>p.id===uid))fail(409,'This account has already joined.');if(s.players.length>=s.rules.maxPlayers)fail(409,'Room full / Room penuh.');s.players.push({id:uid,name,total:0,ready:false,avatarId});});
-    await db.run('INSERT INTO members(id,match_id,user_id,name,peer_id) VALUES(?,?,?,?,?)',crypto.randomUUID(),row.match_id,uid,name,tokenHash);
+    await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'The match has started / Permainan sudah mulai.');if(s.players.some(p=>p.id===uid))fail(409,'This account has already joined.');if(s.players.length>=roomCapacity(s))fail(409,'Room full / Room penuh.');s.players.push({id:uid,name,total:0,ready:false,avatarId});if(!s.hostId)s.hostId=uid;},(s,row,data)=>[
+      db.statement('INSERT INTO members(id,match_id,user_id,name,peer_id) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM rooms WHERE code=? AND revision=? AND data=?)',crypto.randomUUID(),row.match_id,uid,name,tokenHash,code,row.revision+1,data)
+    ]);
     return json({code,token});
   }
   const token=req.headers.get('X-Room-Token');if(!token||!/^[a-f0-9]{64}$/.test(token))fail(401,'Room token required.');
   const player=await db.one('SELECT * FROM members WHERE match_id=? AND peer_id=?',row.match_id,await hashToken(token));
-  if(!player||(state.mode==='ranked'&&player.user_id!==user?.id))fail(403,'Room access denied.');
+  if(!player||!state.players.some(p=>p.id===player.user_id)||(state.mode==='ranked'&&player.user_id!==user?.id))fail(403,'Room access denied.');
+  if(action==='name'&&method==='POST'){
+    const name=validName((await body(req)).name);
+    await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'Nama terkunci selama battle / Name is locked during battle.');const p=s.players.find(p=>p.id===player.user_id);if(!p)fail(403,'Player left.');p.name=name;},(s,row,data)=>[
+      db.statement('UPDATE members SET name=? WHERE id=? AND EXISTS(SELECT 1 FROM rooms WHERE code=? AND revision=? AND data=?)',name,player.id,code,row.revision+1,data)
+    ]);
+    return json({ok:true,name});
+  }
   if(action==='avatar'&&method==='POST'){
     const b=await body(req),avatarId=avatar(b.avatarId);
     await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'Avatar terkunci selama pertandingan / Avatar is locked during a match.');const p=s.players.find(p=>p.id===player.user_id);if(!p)fail(403,'Player left.');if(p.avatarId===avatarId)return false;p.avatarId=avatarId;});
     return json({ok:true,avatarId});
   }
   if(action==='ready'&&method==='POST'){
-    await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'Match already started.');const p=s.players.find(p=>p.id===player.user_id);if(!p)fail(403,'Player left.');p.ready=true;});
+    await mutate(db,code,s=>{if(s.phase!=='lobby')fail(409,'Match already started.');const p=s.players.find(p=>p.id===player.user_id);if(!p)fail(403,'Player left.');validName(p.name);p.ready=true;if(s.matchType==='solo'&&matchRequirements(s).canStart)startBattle(s);});
     return json({ok:true});
   }
   if(action==='start'&&method==='POST'){
-    await mutate(db,code,s=>{if(s.hostId!==player.user_id)fail(403,'Host only.');if(s.phase!=='lobby')fail(409,'Match already started.');if(s.players.length<(s.practice?1:2)||s.players.some(p=>!p.ready))fail(409,'All players must be ready / Semua pemain harus siap.');s.turnMode='sequential-v1';s.queue=randomQueue(s.clips.map(c=>c.id),s.rules.rounds);nextRound(s);});
+    await mutate(db,code,s=>{if(s.hostId!==player.user_id)fail(403,'Host only.');if(s.phase!=='lobby')fail(409,'Match already started.');startBattle(s);});
     return json({ok:true});
   }
   if(action==='leave'&&method==='POST'){
-    await mutate(db,code,s=>{if(s.phase==='lobby'){s.players=s.players.filter(p=>p.id!==player.user_id);if(s.hostId===player.user_id)s.hostId=s.players[0]?.id||'';}return true;});return json({ok:true});
+    await mutate(db,code,s=>{if(s.phase==='lobby'){s.players=s.players.filter(p=>p.id!==player.user_id);if(s.hostId===player.user_id)s.hostId=s.players[0]?.id||'';}return true;},(s,row,data)=>s.phase!=='lobby'?[]:[
+      db.statement('DELETE FROM members WHERE id=? AND EXISTS(SELECT 1 FROM rooms WHERE code=? AND revision=? AND data=?)',player.id,code,row.revision+1,data)
+    ]);return json({ok:true});
   }
   if(action==='audio'&&method==='GET'){
     const takeId=id(url.searchParams.get('id')),take=await db.one('SELECT * FROM takes WHERE id=? AND match_id=?',takeId,row.match_id);if(!take)fail(404,'Recording unavailable.');

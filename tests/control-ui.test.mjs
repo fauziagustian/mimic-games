@@ -38,4 +38,8 @@ test('sound picker: explicit pool, shared eligibility filters, maintenance UI an
   account.user={role:'player'};picker.render();assert.equal(doc.querySelector('#create').disabled,false);
   settings.acceptNewRooms=false;picker.render();assert.equal(doc.querySelector('#create').disabled,true);assert.equal(doc.querySelector('#joinForm button').disabled,true);
   account.user.role='owner';picker.render();assert.equal(doc.querySelector('#create').disabled,false);
+  account.user=null;settings.acceptNewRooms=true;setup.mode='casual';setup.matchType='solo';picker.render();
+  assert.deepEqual(picker.payload(),{});assert.match(doc.querySelector('#sound-picker-controls').innerHTML,/id="soundSelection" disabled/);
+  settings.allowJoins=false;picker.render();assert.equal(doc.querySelector('#create').disabled,true,'solo also respects the join pause');
+  setup.matchType='custom';picker.render();assert.equal(doc.querySelector('#create').disabled,false,'creating custom is allowed while joins alone are paused');
 });

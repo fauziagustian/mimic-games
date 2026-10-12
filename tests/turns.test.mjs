@@ -45,11 +45,11 @@ test('client markup and tick: escaped active name, cue text and capture only for
   vm.runInContext("room={...room,turnIndex:2,activePlayerId:'a'};location.href='https://mimic.test/choose-character';tick();",context);assert.equal(captures,1);
 });
 
-test('Worker: timed-out turns advance once, next round resets, practice ends, legacy matches stay compatible',async()=>{
+test('Worker: timed-out turns advance once, next round resets, legacy practice ends, legacy matches stay compatible',async()=>{
   const mf=await runtime(),db=await mf.getD1Database('DB'),origin='https://mimic.test';
   const call=async(path,token,data,raw)=>{const r=await mf.dispatchFetch(origin+path,{method:data||raw?'POST':'GET',headers:{Origin:origin,...(token?{'X-Room-Token':token}:{})},body:raw??(data?JSON.stringify(data):undefined)});return {status:r.status,value:await r.json()};};
   const alter=async(code,fn)=>{const row=await db.prepare('SELECT data FROM rooms WHERE code=?').bind(code).first(),s=JSON.parse(row.data);fn(s);await db.prepare('UPDATE rooms SET data=? WHERE code=?').bind(JSON.stringify(s),code).run();};
-  const create=async(practice=false)=>{const h=(await call('/api/rooms',null,{name:'Host',categoryId:'drama',language:'all',practice})).value,base='/api/rooms/'+h.code;const g=practice?null:(await call(base+'/join',null,{name:'Guest'})).value;for(const p of [h,g].filter(Boolean))await call(base+'/ready',p.token,{});await call(base+'/start',h.token,{});return {h,g,base};};
+  const create=async(practice=false)=>{const h=(await call('/api/rooms',null,{name:'Host',categoryId:'drama',language:'all',capacity:2})).value,base='/api/rooms/'+h.code;if(practice)await alter(h.code,s=>{delete s.matchType;delete s.capacity;s.practice=true;});const g=practice?null:(await call(base+'/join',null,{name:'Guest'})).value;for(const p of [h,g].filter(Boolean))await call(base+'/ready',p.token,{});await call(base+'/start',h.token,{});return {h,g,base};};
   try{
     const {h,g,base}=await create();
     await alter(h.code,s=>{s.recordAt=Date.now()-50000;s.endAt=Date.now()-40000;s.collectUntil=Date.now()-1000;});

@@ -7,11 +7,12 @@ import {soundPicker} from './sound-picker.js';
 import {isSequential,isMyTurn,turnKey,mayCapture,turnCue} from './turns.js';
 import {gameRoute,characterUrl,matchingUrl,roomUrl,parseRoomSession} from './game-routing.js';
 import {homePage,characterPage,createPage,matchingPage,activeRoomPage,pageHeading} from './game-pages.js';
+import {stageName,matchRequirements,roomCapacity} from './match-rules.js';
 const $=s=>document.querySelector(s),app=$('#app'),tr=t,label=(id,en)=>esc(t(id,en));
 const avatars=avatarStage();
 let catalog,account,site,picker,session=null,room=null,mic=null,capture=null,polling=false,offset=0,muted=false,busy=false,lastRender='',pendingTake=null,creating=false,joining=false;
 const clips=new Map(),cues=new Set();
-let setup={categoryId:'drama',language:'all',mode:'casual',profile:'party'};
+let setup={categoryId:'drama',language:'all',mode:'casual',profile:'party',matchType:'custom',capacity:8};
 const route=()=>gameRoute(location.href);
 const onRoomPage=()=>{const r=route();return !!session&&(r.page==='play'&&r.code===session.code||r.page==='matching'&&(!r.code||r.code===session.code));};
 const onPlayPage=()=>route().page==='play'&&route().code===session?.code;
@@ -19,7 +20,7 @@ function toast(message){$('#toast').textContent=message;$('#toast').classList.ad
 function bind(selector,fn){const el=$(selector);if(el)el.onclick=async()=>{try{await fn();}catch(e){toast(e.message);}};}
 async function roomApi(action='',options={}){return api(`/rooms/${session.code}${action?'/'+action:''}`,{...options,headers:{'X-Room-Token':session.token,...options.headers}});}
 async function loadClip(c){if(!clips.has(c.id)){const response=await fetch(c.url);if(!response.ok)throw new Error(tr('Sound gagal dimuat.','Sound could not load.'));clips.set(c.id,await decodeAudio(await response.arrayBuffer()));}return clips.get(c.id);}
-function name(){const value=($('#nickname')?.value??localStorage.getItem('mimic-name')??'').trim().slice(0,20);if(!value)throw new Error(tr('Isi nama panggung dulu.','Choose a stage name.'));localStorage.setItem('mimic-name',value);return value;}
+function name(){const value=stageName(localStorage.getItem('mimic-name'));if(!value)throw new Error(tr('Simpan nama panggung 1–10 karakter dulu.','Save a 1–10 character stage name first.'));return value;}
 function navigate(url,replace=false){
  const target=new URL(url,location.origin);if(target.origin!==location.origin||gameRoute(target.href).page==='unknown')return;
  if(location.pathname+location.search!==target.pathname+target.search)history[replace?'replaceState':'pushState']({},'',target.pathname+target.search);
@@ -32,7 +33,7 @@ function renderScreen(){
  if(r.page==='character'){chooseCharacter();return;}
  if(r.page==='create'){
    if(session){app.innerHTML=activeRoomPage(session);bind('#leave',()=>leave('/create-match'));return;}
-   if(!localStorage.getItem('mimic-name')?.trim()){navigate(characterUrl('create'),true);return;}
+   if(!stageName(localStorage.getItem('mimic-name'))){navigate(characterUrl('create'),true);return;}
    renderCreate();return;
  }
  if(r.page==='play'&&!session){navigate(matchingUrl(r.code),true);return;}
@@ -55,33 +56,63 @@ function home(){
  avatars.detach();app.innerHTML=homePage({site,session,name:localStorage.getItem('mimic-name')||''});
 }
 function chooseCharacter(){
- const r=route(),inRoom=r.next==='lobby'&&session?.code===r.code&&room?.phase==='lobby';
- if(r.next==='lobby'&&session?.code===r.code&&room&&room.phase!=='lobby'){navigate(roomUrl(room),true);return;}
+ const r=route(),inRoom=!!session&&room?.phase==='lobby';
+ if(session&&room&&room.phase!=='lobby'){navigate(roomUrl(room),true);return;}
  const player=inRoom?room.players.find(p=>p.id===room.me):null;
- app.innerHTML=characterPage({name:player?.name||localStorage.getItem('mimic-name')||'',inRoom,next:r.next,code:r.code});
- avatars.mount($('#characterStage'),{room:inRoom?room:null,players:inRoom?room.players:[{id:'you',name:localStorage.getItem('mimic-name')||tr('Kamu','You'),avatarId:preferredAvatar()}],offset,showPicker:true,
+ let savedName=player?.name||localStorage.getItem('mimic-name')||'',saving=false;
+ app.innerHTML=characterPage({name:savedName,inRoom,next:inRoom?'lobby':r.next,code:inRoom?session.code:r.code});
+ avatars.mount($('#characterStage'),{room:inRoom?room:null,players:inRoom?room.players:[{id:'you',name:savedName||tr('Kamu','You'),avatarId:preferredAvatar()}],offset,showPicker:true,
    onSelect:inRoom?async avatarId=>{await roomApi('avatar',{method:'POST',body:{avatarId}});await poll();avatars.sync({room,players:room.players,offset});}:undefined,onError:e=>toast(e.message)});
- $('#characterForm').onsubmit=e=>{e.preventDefault();try{name();navigate(inRoom?roomUrl(room):r.next==='create'?'/create-match':matchingUrl(r.code));}catch(e){toast(e.message);}};
+ const input=$('#nickname'),form=$('#characterForm'),save=$('#saveName'),next=$('#continueCharacter'),status=$('#nameStatus'),counter=$('#nameCount');
+ const update=()=>{
+   const value=stageName(input.value),dirty=value!==savedName;
+   counter.textContent=input.value.length+'/10';
+   input.setAttribute('aria-invalid',String(!value));
+   save.disabled=saving||!value||!dirty;next.disabled=saving||!value||dirty;
+   input.readOnly=saving;
+   save.textContent=saving?tr('Menyimpan…','Saving…'):tr('Simpan nama','Save name');
+   status.textContent=saving?tr('Menyimpan nama ke panggung…','Saving your stage name…'):!value?tr('Nama wajib 1–10 karakter.','Name must be 1–10 characters.'):dirty?tr('Belum disimpan. Klik Simpan nama untuk memperbarui panggung.','Unsaved. Click Save name to update the stage.'):tr('✓ Nama tersimpan dan tampil di panggung.','✓ Name saved and displayed on stage.');
+ };
+ input.oninput=update;
+ save.onclick=async()=>{
+   const value=stageName(input.value);if(saving||!value)return;
+   const activeSession=session;saving=true;update();
+   try{
+     if(inRoom){
+       await roomApi('name',{method:'POST',body:{name:value}});
+       const updated=await roomApi();if(session===activeSession&&(!room||updated.revision>=room.revision))room=updated;
+     }
+     savedName=value;localStorage.setItem('mimic-name',value);
+     if(form.isConnected&&route().page==='character'){
+       input.value=value;
+       avatars.sync(inRoom?{room,players:room.players,offset}:{players:[{id:'you',name:value,avatarId:preferredAvatar()}]});
+     }
+   }catch(e){toast(e.message);}
+   finally{saving=false;if(form.isConnected)update();}
+ };
+ form.onsubmit=e=>{e.preventDefault();if(next.disabled)return;localStorage.setItem('mimic-name',savedName);navigate(inRoom?roomUrl(room):r.next==='create'?'/create-match':matchingUrl(r.code));};
+ update();
 }
 function renderCreate(){
  app.innerHTML=createPage({catalog,setup,name:localStorage.getItem('mimic-name')||'',avatarId:preferredAvatar(),manual:!!picker.payload().soundIds});
  const refresh=()=>{
-   setup={categoryId:$('#category').value,language:$('#language').value,mode:'casual',profile:$('#profile').value};
+   setup={categoryId:$('#category').value,language:$('#language').value,mode:'casual',profile:$('#profile').value,matchType:$('#matchType').value,capacity:Number($('#capacity').value)};
    sessionStorage.setItem('mimic-setup',JSON.stringify(setup));
    const sounds=catalog.sounds.filter(c=>c.categoryId===setup.categoryId&&(setup.language==='all'||c.language===setup.language)&&c.duration<=catalog.rules.recordSeconds);
    $('#soundCount').textContent=' · '+sounds.length;
    $('#soundCards').innerHTML=sounds.length?sounds.map(c=>`<article class="clip-card"><div class="clip-top"><span>${esc(catalog.languages.find(l=>l.id===c.language)?.label||c.language)}</span><button class="play-circle" data-play="${esc(c.id)}" aria-label="Play ${esc(c.title)}">▶</button></div><h3>${esc(c.title)}</h3><p class="quote-text">${esc(c.text)}</p><span class="small">${c.duration.toFixed(1)}s · ${esc(c.source)}</span></article>`).join(''):`<div class="empty">${label('Belum ada sound. Coba kategori atau bahasa lain.','No sounds here. Try another category or language.')}</div>`;
    document.querySelectorAll('[data-play]').forEach(b=>b.onclick=async()=>{try{const samples=await loadClip(sounds.find(c=>c.id===b.dataset.play));if(route().page==='create')await playSamples(samples);}catch(e){toast(e.message);}});
-   picker.render();if(creating){$('#create').disabled=true;$('#practice').disabled=true;}
+   picker.render();if(creating)$('#create').disabled=true;
  };
- for(const id of ['category','language','profile'])$('#'+id).onchange=refresh;
- refresh();bind('#create',()=>create(false));bind('#practice',()=>create(true));
+ for(const id of ['category','language','profile','capacity'])$('#'+id).onchange=refresh;
+ $('#matchType').onchange=()=>{setup.matchType=$('#matchType').value;if(setup.matchType==='solo')setup.capacity=8;renderCreate();};
+ refresh();bind('#create',create);
 }
 function saveSession(s){session=s;room=null;pendingTake=null;sessionStorage.setItem('mimic-room',JSON.stringify(s));cues.clear();lastRender='';}
-async function create(practice){
+async function create(){
  if(creating)return;if(session)throw new Error(tr('Keluar dari room aktif terlebih dahulu.','Leave the current room first.'));
- const nickname=name();creating=true;$('#create').disabled=true;$('#practice').disabled=true;
- try{saveSession(await api('/rooms',{method:'POST',body:{...setup,...picker.payload(),name:nickname,avatarId:preferredAvatar(),practice,mode:'casual'}}));navigate(matchingUrl(session.code));await poll();}
+ const nickname=name();creating=true;$('#create').disabled=true;
+ try{saveSession(await api('/rooms',{method:'POST',body:{...setup,...(setup.matchType==='solo'?{}:picker.payload()),name:nickname,avatarId:preferredAvatar(),mode:'casual'}}));navigate(matchingUrl(session.code));await poll();}
  finally{creating=false;if(route().page==='create')renderCreate();}
 }
 async function join(){
@@ -89,7 +120,7 @@ async function join(){
  if(session)throw new Error(tr('Keluar dari room aktif terlebih dahulu.','Leave the current room first.'));
  const code=$('#code').value.trim().toUpperCase();
  if(!/^[A-Z2-9]{6}$/.test(code))throw new Error(tr('Kode room terdiri dari 6 huruf/angka.','Enter a six-character room code.'));
- if(!localStorage.getItem('mimic-name')?.trim()){navigate(characterUrl('matching',code));return;}
+ if(!stageName(localStorage.getItem('mimic-name'))){navigate(characterUrl('matching',code));return;}
  const button=$('#joinForm button');joining=true;button.disabled=true;
  try{saveSession(await api(`/rooms/${code}/join`,{method:'POST',body:{name:name(),avatarId:preferredAvatar()}}));navigate(matchingUrl(session.code));await poll();}
  finally{joining=false;if(button.isConnected)button.disabled=false;}
@@ -102,10 +133,11 @@ function playersMarkup(){
  return `<div class="player ${active?'active':''}"><span class="turn-number">${index+1}</span><span class="avatar">${avatarImage(p.avatarId)}</span><div class="player-info"><b>${esc(p.name)}${p.id===room.me?' · '+tr('kamu','you'):''}</b><span class="small">${esc(status)}</span></div><span class="player-score">${p.total}</span></div>`;}).join('');
 }
 function lobbyMarkup(){
- return `<span class="eyebrow">BACKSTAGE / ${room.profile.toUpperCase()}</span><h2>${esc(categoryName(catalog.categories.find(x=>x.id===room.categoryId)))}</h2><div class="rules-banner"><span>${room.rules.rounds} ${label('ronde','rounds')}</span><span>${label('Maks.','Max.')} ${room.rules.recordSeconds}s</span><span>${room.clips.length} sounds</span></div><p>${label('Ready → 3 → 2 → 1 → Start. Satu pemain, satu take. Bergiliran sesuai urutan lobby.','Ready → 3 → 2 → 1 → Start. One player, one take. Take turns in lobby order.')}</p><div class="notice">${label('Siap meminta izin mikrofon. Rekaman hanya aktif saat giliranmu, lalu dibagikan ke pemain room. Gunakan headset.','Ready requests microphone access. Recording is active only on your turn, then shared with room players. Use headphones.')}</div><p id="readyStatus" role="status">${busy?label('Menyiapkan sound & mikrofon…','Preparing sounds & microphone…'):mic?label('Mikrofon siap. Tunggu host memulai.','Microphone armed. Waiting for the host.'):''}</p><div class="match-actions"><button class="button green" id="ready" ${busy||mic?'disabled':''}>${mic?'✓ '+label('Mikrofon siap','Microphone armed'):label('Siap & izinkan mikrofon','Ready & allow microphone')}</button>${room.host?`<button class="button primary" id="start" ${room.players.some(p=>!p.ready)||room.players.length<(room.practice?1:2)||!mic?'disabled':''}>${label('Mulai battle','Start battle')} →</button>`:''}</div><details><summary>${label('Penilaian & privasi rekaman','Scoring & recording privacy')}</summary><p>${room.profile==='party'?label('Party: pola nada relatif 60% + ritme 40%.','Party: relative pitch pattern 60% + rhythm 40%.'):label(`Precision: nada ${room.rules.weights.pitch}%, kata ${room.rules.weights.words}%, karakter ${room.rules.weights.timbre}%, ritme ${room.rules.weights.rhythm}%.`,`Precision: pitch ${room.rules.weights.pitch}%, words ${room.rules.weights.words}%, timbre ${room.rules.weights.timbre}%, rhythm ${room.rules.weights.rhythm}%.`)}</p><p>${label('Take disimpan di server untuk playback room. Pembersihan otomatis belum tersedia. Jangan rekam ucapan sensitif. Skor merupakan rubrik permainan, bukan akurasi identitas suara.','Takes are stored on the server for room playback. Automatic deletion is not available. Do not record sensitive speech. Scores are a game rubric, not voice identity accuracy.')}</p></details>`;
+ const requirements=matchRequirements(room),solo=room.matchType==='solo',ownReady=room.players.find(p=>p.id===room.me)?.ready;
+ return `<span class="eyebrow">BACKSTAGE / ${room.profile.toUpperCase()}</span><h2>${esc(categoryName(catalog.categories.find(x=>x.id===room.categoryId)))}</h2><div class="rules-banner"><span>${room.rules.rounds} ${label('ronde','rounds')}</span><span>${label('Maks.','Max.')} ${room.rules.recordSeconds}s</span><span>${room.clips.length} sounds</span></div><p>${label('Ready → 3 → 2 → 1 → Start. Satu pemain, satu take. Bergiliran sesuai urutan lobby.','Ready → 3 → 2 → 1 → Start. One player, one take. Take turns in lobby order.')}</p><div class="match-gates" aria-live="polite"><b>${solo?'SOLO MATCHMAKING':'CUSTOM MATCH'} · ${room.players.length}/${requirements.capacity} ${label('pemain','players')}</b><p>${requirements.full?label('✓ Room penuh','✓ Room full'):label(`Menunggu ${Math.max(0,requirements.capacity-room.players.length)} pemain lagi. Room wajib penuh.`,`Waiting for ${Math.max(0,requirements.capacity-room.players.length)} more players. Every slot must be filled.`)}</p><p>${requirements.ready}/${requirements.capacity} ${label('pemain siap','players ready')}${!requirements.namesValid?' · '+label('Ada nama yang harus diperbarui (maks. 10 karakter).','A name needs updating (max. 10 characters).'):''}</p><span class="small">${solo?label('Battle otomatis mulai setelah 8/8 pemain siap. Sound acak sesuai pilihan kategori.','Battle starts automatically when all 8/8 players are ready. Random sounds from your selected category.'):label('Hanya host yang bisa mulai setelah room penuh dan semua pemain siap.','Only the host can start once the room is full and everyone is ready.')}</span></div><div class="notice">${label('Siap meminta izin mikrofon. Rekaman hanya aktif saat giliranmu, lalu dibagikan ke pemain room. Gunakan headset.','Ready requests microphone access. Recording is active only on your turn, then shared with room players. Use headphones.')}</div><p id="readyStatus" role="status">${busy?label('Menyiapkan sound & mikrofon…','Preparing sounds & microphone…'):mic?(solo?label('Mikrofon siap. Menunggu 8 pemain siap.','Microphone armed. Waiting for all 8 players.'):label('Mikrofon siap. Tunggu host memulai.','Microphone armed. Waiting for the host.')):''}</p><div class="match-actions"><button class="button green" id="ready" ${busy||(mic&&ownReady)?'disabled':''}>${mic?'✓ '+label('Mikrofon siap','Microphone armed'):label('Siap & izinkan mikrofon','Ready & allow microphone')}</button>${room.host&&!solo?`<button class="button primary" id="start" ${!requirements.canStart||!mic||busy?'disabled':''}>${label('Mulai battle','Start battle')} →</button>`:''}</div><details><summary>${label('Penilaian & privasi rekaman','Scoring & recording privacy')}</summary><p>${room.profile==='party'?label('Party: pola nada relatif 60% + ritme 40%.','Party: relative pitch pattern 60% + rhythm 40%.'):label(`Precision: nada ${room.rules.weights.pitch}%, kata ${room.rules.weights.words}%, karakter ${room.rules.weights.timbre}%, ritme ${room.rules.weights.rhythm}%.`,`Precision: pitch ${room.rules.weights.pitch}%, words ${room.rules.weights.words}%, timbre ${room.rules.weights.timbre}%, rhythm ${room.rules.weights.rhythm}%.`)}</p><p>${label('Take disimpan di server untuk playback room. Pembersihan otomatis belum tersedia. Jangan rekam ucapan sensitif. Skor merupakan rubrik permainan, bukan akurasi identitas suara.','Takes are stored on the server for room playback. Automatic deletion is not available. Do not record sensitive speech. Scores are a game rubric, not voice identity accuracy.')}</p></details>`;
 }
 function renderLobby(){
- app.dataset.page='matching';app.innerHTML=`<section class="flow-page lobby-page">${pageHeading('03 / GAME MATCHING',label('GENG SUDAH SIAP?','IS THE CREW READY?'),label('Bagikan kode, tunggu teman, lalu semua tekan Siap.','Share the code, wait for friends, then everyone gets Ready.'))}<div class="lobby-layout"><section class="panel">${lobbyMarkup()}</section><aside class="stack"><section class="panel invite-panel"><span class="eyebrow">ROOM CODE</span><strong class="room-code">${esc(room.code)}</strong><button class="button light" id="copy">${label('Salin undangan','Copy invite')}</button></section><section class="panel"><div class="section-heading"><h3>${label('Urutan pemain','Player order')}</h3><span class="tag">${room.players.length}/${room.rules.maxPlayers}</span></div>${playersMarkup()}<a class="text-button" data-game-link href="${characterUrl('lobby',room.code)}">${label('Ganti karakter di halaman karakter','Edit on the character page')} →</a></section><button class="text-button" id="leave">${label('Keluar dari room','Leave room')}</button></aside></div></section>`;
+ app.dataset.page='matching';app.innerHTML=`<section class="flow-page lobby-page">${pageHeading('03 / GAME MATCHING',label('GENG SUDAH SIAP?','IS THE CREW READY?'),(room.matchType==='solo'?label('Mencari 8 pemain dengan kategori, bahasa, dan profil yang sama. Semua harus tekan Siap.','Finding 8 players with the same category, language and profile. Everyone must press Ready.'):label('Bagikan kode, tunggu teman, lalu semua tekan Siap.','Share the code, wait for friends, then everyone gets Ready.')))}<div class="lobby-layout"><section class="panel">${lobbyMarkup()}</section><aside class="stack"><section class="panel invite-panel"><span class="eyebrow">${room.matchType==='solo'?'SOLO QUEUE':'ROOM CODE'}</span><strong class="room-code">${esc(room.code)}</strong>${room.matchType!=='solo'?`<button class="button light" id="copy">${label('Salin undangan','Copy invite')}</button>`:'<p class="small">'+label('Pemain masuk melalui antrean solo, bukan kode undangan.','Players join through solo matchmaking, not an invite code.')+'</p>'}</section><section class="panel"><div class="section-heading"><h3>${label('Urutan pemain','Player order')}</h3><span class="tag">${room.players.length}/${roomCapacity(room)}</span></div>${playersMarkup()}<a class="text-button" data-game-link href="${characterUrl('lobby',room.code)}">${label('Ganti karakter di halaman karakter','Edit on the character page')} →</a></section><button class="text-button" id="leave">${label('Keluar dari room','Leave room')}</button></aside></div></section>`;
  bindRoomActions();
 }
 function bindRoomActions(r){
@@ -135,12 +167,12 @@ function renderRoom(force=false){if(!room||!onRoomPage())return;if(room.phase===
 async function poll(){
  if(!session||polling)return;polling=true;const activeSession=session,start=Date.now();
  try{
-   const state=await roomApi();if(session!==activeSession)return;
+   const state=await roomApi();if(session!==activeSession||room&&state.revision<room.revision)return;
    offset=state.serverTime-(start+Date.now())/2;room=state;$('#networkStatus').textContent=room.code;$('#networkStatus').classList.add('online');
    if(onRoomPage()){
      const wanted=roomUrl(room);
      if(location.pathname+location.search!==wanted)navigate(wanted,true);else renderRoom();
-   }else if(route().page==='character'&&route().next==='lobby'&&route().code===session.code){
+   }else if(route().page==='character'){
      if(room.phase!=='lobby')navigate(roomUrl(room),true);else avatars.sync({room,players:room.players,offset});
    }
  }catch(e){
@@ -198,7 +230,7 @@ window.addEventListener('beforeunload',()=>{capture?.stop();mic?.getTracks().for
 async function init(){
  try{
    [catalog,account,site]=await Promise.all([api('/catalog'),api('/me'),loadSite()]);
-   try{const saved=JSON.parse(sessionStorage.getItem('mimic-setup'));if(saved)setup={categoryId:saved.categoryId,language:saved.language,mode:'casual',profile:saved.profile==='precision'?'precision':'party'};}catch{}
+   try{const saved=JSON.parse(sessionStorage.getItem('mimic-setup'));if(saved)setup={categoryId:saved.categoryId,language:saved.language,mode:'casual',profile:saved.profile==='precision'?'precision':'party',matchType:saved.matchType==='solo'?'solo':'custom',capacity:Number.isInteger(saved.capacity)&&saved.capacity>=2&&saved.capacity<=8?saved.capacity:8};}catch{}
    const query=new URLSearchParams(location.search);
    if(catalog.categories.some(c=>c.id===query.get('category')))setup.categoryId=query.get('category');
    if(!catalog.categories.some(c=>c.id===setup.categoryId))setup.categoryId=catalog.categories[0]?.id||'';

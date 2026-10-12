@@ -17,7 +17,7 @@ test('Control center: RBAC, site versions, operation gates, selected sounds, roo
   const mf=await runtime(),db=await mf.getD1Database('DB'),origin='https://mimic.test';
   const call=async(path,{who,method='GET',data,token,headers={}}={})=>{const r=await mf.dispatchFetch(origin+path,{method,headers:{Origin:origin,...(who?{'oai-authenticated-user-id':who,'oai-authenticated-user-email':who+'@preview.test'}:{}),...(token?{'X-Room-Token':token}:{}),...headers},body:data===undefined?undefined:JSON.stringify(data)});const value=await r.json();return {status:r.status,value};};
   const write=(path,data,who='admin')=>call(path,{who,method:'POST',data});
-  const create=data=>write('/api/rooms',{name:'Host',categoryId:'drama',language:'all',mode:'casual',...data},null);
+  const create=data=>write('/api/rooms',{name:'Host',categoryId:'drama',language:'all',mode:'casual',capacity:2,...data},null);
   let config,host,guest;
   try{
     await t.test('owners can grant/revoke roles; nonstaff and moderators cannot operate or escalate',async()=>{
@@ -63,6 +63,7 @@ test('Control center: RBAC, site versions, operation gates, selected sounds, roo
     await t.test('maintenance blocks new player work but allows existing rooms and protected admin access',async()=>{
       config=(await write('/api/admin/site',{revision:config.revision,settings:{...config.settings,acceptNewRooms:false,ugcSubmissionsEnabled:false,manualSoundSelectionEnabled:false}})).value;
       assert.equal((await create({})).status,503);
+      assert.equal((await create({matchType:'solo',capacity:8})).status,503);
       assert.equal((await write('/api/rooms/'+host.code+'/join',{name:'Blocked'},null)).status,503);
       assert.equal((await write('/api/community/submissions',{},'player')).status,503);
       assert.equal((await call('/api/community')).status,200);assert.equal((await call('/api/community/mine',{who:'player'})).status,200);
@@ -75,6 +76,8 @@ test('Control center: RBAC, site versions, operation gates, selected sounds, roo
       const state=(await call('/api/rooms/'+host.code,{token:host.token})).value;assert.equal(state.phase,'listen');assert.ok(state.queue.every(id=>id===state.clips[0].id));
       config=(await write('/api/admin/site',{revision:config.revision,settings:{...config.settings,acceptNewRooms:true,allowJoins:false}})).value;
       const newHost=(await create({})).value;assert.ok(newHost.code);assert.equal((await write('/api/rooms/'+newHost.code+'/join',{name:'Blocked'},null)).status,503);
+      assert.equal((await create({matchType:'solo',capacity:8})).status,503,'pausing joins also blocks solo queue entry');
+      assert.equal((await write('/api/rooms',{name:'Solo QA',categoryId:'drama',language:'all',matchType:'solo',capacity:8},'operator')).status,200,'operators retain QA access');
       assert.equal((await create({soundIds:['lah-kok-gitu']})).status,403);
     });
     await t.test('room monitor is sanitized; explicit revision-checked closure rejects new takes without deletion',async()=>{

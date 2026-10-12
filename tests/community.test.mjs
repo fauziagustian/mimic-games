@@ -62,16 +62,16 @@ test('UGC: private upload → moderation → catalog/game → ranked curation �
       for(const key of ['owner_id','profile','audioKey','note','reviewer','audioHash'])assert.equal(lib[0][key],undefined,key);
       assert.equal((await call(item.url)).status,200);assert.equal((await call('/api/community?language=indonesian')).value.items.length,0);
       sound=(await call('/api/catalog')).value.sounds.find(s=>s.ugcId===item.id);assert.ok(sound);assert.equal(sound.ranked,false);assert.equal(sound.creatorName,lib[0].creatorName);
-      const casual=await post('/api/rooms',null,{name:'Guest',categoryId:'ugc-test',language:'english',mode:'casual',profile:'party',practice:true});assert.equal(casual.status,200,JSON.stringify(casual.value));
+      const casual=await post('/api/rooms',null,{name:'Guest',categoryId:'ugc-test',language:'english',mode:'casual',profile:'party',capacity:2});assert.equal(casual.status,200,JSON.stringify(casual.value));
       const room=(await call('/api/rooms/'+casual.value.code,{headers:{'X-Room-Token':casual.value.token}})).value;assert.ok(room.clips.some(s=>s.id===sound.id));assert.ok(room.queue.every(id=>id===sound.id));
-      assert.equal((await post('/api/rooms','player',{name:'Player',categoryId:'ugc-test',language:'english',mode:'ranked',practice:true})).status,400);
+      assert.equal((await post('/api/rooms','player',{name:'Player',categoryId:'ugc-test',language:'english',mode:'ranked',capacity:2})).status,400);
       assert.equal((await call('/api/leaderboard')).value.rows.length,0);
       assert.equal((await call('/api/community/mine',{who:'creator'})).value.items[0].note,'QA checked');
     });
     await t.test('admin retains creator credits, curates ranked, hides disabled sounds',async()=>{
       const changed=await post('/api/admin/sounds','admin',{...sound,ranked:true,active:true});assert.equal(changed.status,200,JSON.stringify(changed.value));
       sound=(await call('/api/catalog')).value.sounds.find(s=>s.id===sound.id);assert.equal(sound.ugcId,item.id);assert.equal(sound.creatorName,'<img src=x onerror=alert(1)>');
-      assert.equal((await post('/api/rooms','player',{name:'Player',categoryId:'ugc-test',language:'english',mode:'ranked',practice:true})).status,200);
+      assert.equal((await post('/api/rooms','player',{name:'Player',categoryId:'ugc-test',language:'english',mode:'ranked',capacity:2})).status,200);
       assert.equal((await post('/api/admin/sounds','admin',{...sound,uploadId:'replace'})).status,400);
       assert.equal((await post('/api/admin/sounds','admin',{...sound,active:false})).status,200);
       assert.equal((await call('/api/community')).value.items.length,0);assert.equal((await call(item.url)).status,404);assert.equal((await call(item.url,{who:'creator'})).status,200);
