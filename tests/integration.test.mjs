@@ -25,12 +25,21 @@ test('Worker: auth, catalog, rooms, one take, ranked review, leaderboard, snapsh
  for(const player of [host,guest])assert.equal((await call(`/api/rooms/${code}/ready`,{token:player.token,method:'POST'})).status,200);
  assert.equal((await call(`/api/rooms/${code}/start`,{token:host.token,method:'POST'})).status,200);
  let a=(await call(`/api/rooms/${code}`,{token:host.token})).value,b=(await call(`/api/rooms/${code}`,{token:guest.token})).value;
- assert.equal(a.recordAt,b.recordAt);assert.equal(a.queue[0],b.queue[0]);assert.equal(a.phase,'listen');assert.equal(a.rules.rounds,1);assert.equal(a.clips[0].profile,undefined);
+ assert.equal(a.turnMode,'sequential-v1');assert.equal(a.activePlayerId,a.me);assert.equal(a.activePlayerId,b.activePlayerId);assert.equal(a.readyAt,b.readyAt);assert.equal(a.recordAt-a.readyAt,4000);assert.equal(a.recordAt,b.recordAt);assert.equal(a.queue[0],b.queue[0]);assert.equal(a.phase,'listen');assert.equal(a.rules.rounds,1);assert.equal(a.clips[0].profile,undefined);
  const fixture=await readFile('public/audio/lah-kok-gitu.wav');assert.equal((await call(`/api/rooms/${code}/take?round=1`,{token:host.token,method:'POST',raw:fixture})).status,409);
  let row=await db.prepare('SELECT * FROM rooms WHERE code=?').bind(code).first(),state=JSON.parse(row.data);state.recordAt=Date.now()-10000;state.endAt=Date.now()-1000;state.collectUntil=Date.now()+150000;state.recordSeconds=15;await db.prepare('UPDATE rooms SET data=? WHERE code=?').bind(JSON.stringify(state),code).run();
- for(const player of [host,guest])assert.equal((await call(`/api/rooms/${code}/take?round=1`,{token:player.token,method:'POST',raw:fixture})).status,200);
+ assert.equal((await call(`/api/rooms/${code}/take?round=1`,{token:guest.token,method:'POST',raw:fixture})).status,409);
+ assert.equal((await call(`/api/rooms/${code}/take?round=1`,{token:host.token,method:'POST',raw:fixture})).status,200);
  assert.equal((await call(`/api/rooms/${code}/take?round=1`,{token:host.token,method:'POST',raw:fixture})).value.duplicate,true);
- a=(await call(`/api/rooms/${code}`,{token:host.token})).value;b=(await call(`/api/rooms/${code}`,{token:guest.token})).value;assert.equal(a.phase,'reveal');assert.deepEqual(a.results,b.results);assert.equal(a.results.length,2);
+ a=(await call(`/api/rooms/${code}`,{token:host.token})).value;b=(await call(`/api/rooms/${code}`,{token:guest.token})).value;assert.equal(a.phase,'reveal');assert.deepEqual(a.results,b.results);assert.equal(a.results.length,1);
+ const hostTotal=a.players[0].total;
+ await Promise.all(Array.from({length:4},()=>call(`/api/rooms/${code}`,{token:host.token})));assert.equal((await call(`/api/rooms/${code}`,{token:host.token})).value.players[0].total,hostTotal);
+ row=await db.prepare('SELECT * FROM rooms WHERE code=?').bind(code).first();state=JSON.parse(row.data);state.revealEnd=Date.now()-1000;await db.prepare('UPDATE rooms SET data=? WHERE code=?').bind(JSON.stringify(state),code).run();
+ a=(await call(`/api/rooms/${code}`,{token:host.token})).value;b=(await call(`/api/rooms/${code}`,{token:guest.token})).value;assert.equal(a.phase,'listen');assert.equal(a.turnIndex,1);assert.equal(a.activePlayerId,b.me);assert.equal(a.recordAt,b.recordAt);assert.equal(a.queue[0],b.queue[0]);
+ assert.equal((await call(`/api/rooms/${code}/take?round=1`,{token:guest.token,method:'POST',raw:fixture})).status,409);
+ row=await db.prepare('SELECT * FROM rooms WHERE code=?').bind(code).first();state=JSON.parse(row.data);state.recordAt=Date.now()-10000;state.endAt=Date.now()-1000;state.collectUntil=Date.now()+30000;state.recordSeconds=15;await db.prepare('UPDATE rooms SET data=? WHERE code=?').bind(JSON.stringify(state),code).run();
+ assert.equal((await call(`/api/rooms/${code}/take?round=1`,{token:guest.token,method:'POST',raw:fixture})).status,200);
+ a=(await call(`/api/rooms/${code}`,{token:guest.token})).value;assert.equal(a.phase,'reveal');assert.equal(a.revealIndex,1);assert.equal(a.results.length,2);assert.equal(a.players[0].total,hostTotal);
  assert.equal((await call(`/api/rooms/${code}/audio?id=${a.results[0].takeId}`,{token:guest.token})).status,200);
  assert.equal((await call('/api/rooms',{method:'POST',data:{name:'Ranked',categoryId:'drama',language:'all',mode:'ranked'}})).status,401);
  const ranked=(await call('/api/rooms',{who:'p1',method:'POST',data:{name:'Player one',categoryId:'drama',language:'indonesian',mode:'ranked',practice:true}})).value;
@@ -49,6 +58,6 @@ test('Worker: auth, catalog, rooms, one take, ranked review, leaderboard, snapsh
  const uploaded=await call('/api/admin/upload',{who:'admin',method:'POST',raw:fixture});assert.equal(uploaded.status,200);
  const sound=await call('/api/admin/sounds',{who:'admin',method:'POST',data:{id:'qa-sound',categoryId:'drama',language:'english',title:'QA sound',text:'Test phrase',source:'QA',rights:'Original',active:true,ranked:true,uploadId:uploaded.value.id}});assert.equal(sound.status,200);assert.equal((await call('/api/catalog')).value.sounds.length,7);
  assert.equal((await call('/api/admin/upload',{who:'admin',method:'POST',raw:new TextEncoder().encode('bad wav')})).status,400);
- console.log('Verified 2-client simultaneous clock, immutable rules, duplicate prevention, moderation, seasons, D1 and R2.');
+ console.log('Verified 2-client sequential turns and shared clock, immutable rules, duplicate prevention, moderation, seasons, D1 and R2.');
  }finally{await mf.dispose();}
 });

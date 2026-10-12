@@ -53,7 +53,7 @@ export function createStage(canvas,{labels,onError=()=>{},onLoaded=()=>{},reduce
     const dt=Math.min(.08,(time-last)/1000);last=time;if(!width||!height)resize();
     const now=Date.now()+offset,result=room?.results?.[room.revealIndex],celebrating=room?.phase==='reveal'&&result?.reaction==='perfect'&&now>=room.revealAt+(room.recordSeconds||5)*1000;
     for(const player of players){const actor=actors.get(player.id);if(!actor)continue;
-      const pose=visualPose(room,player,now),active=room?.phase==='reveal'&&result?.playerId===player.id;
+      const pose=visualPose(room,player,now),active=room?.turnMode==='sequential-v1'?room.activePlayerId===player.id:room?.phase==='reveal'&&result?.playerId===player.id;
       actor.label.classList.toggle('active',active);actor.ring.material.emissive.set(active?'#6c551b':'#000000');
       if(actor.mixer){if(actor.pose!==pose){const clip=actor.clips.find(c=>c.name===pose)||actor.clips.find(c=>c.name==='idle');const next=actor.mixer.clipAction(clip);next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();if(actor.action&&actor.action!==next)actor.action.crossFadeTo(next,.18,true);actor.action=next;actor.pose=pose;if(reducedMotion)actor.mixer.setTime(.12);}
         if(!reducedMotion)actor.mixer.update(dt);

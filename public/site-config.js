@@ -1,7 +1,7 @@
 export const DEFAULT_SITE={
   brandName:'MIMIC',tagline:'SOUND BATTLE',heroEyebrow:'SOUND BATTLE / WEB EDITION',
   heroTitleId:'ONE SOUND.\nYOUR VERSION.',heroTitleEn:'ONE SOUND.\nYOUR VERSION.',
-  heroDescriptionId:'Dengar bersama. Tirukan serentak. Ketawakan hasilnya.',heroDescriptionEn:'Listen together. Imitate together. Laugh at the playback.',
+  heroDescriptionId:'Dengar bersama. Tirukan bergiliran. Ketawakan hasilnya.',heroDescriptionEn:'Listen together. Take turns imitating. Laugh at the playback.',
   footerId:'MIMIC / MAKE SOME NOISE.',footerEn:'MIMIC / MAKE SOME NOISE.',
   announcementEnabled:false,announcementId:'',announcementEn:'',accent:'orange',helpUrl:'',
   acceptNewRooms:true,allowJoins:true,ugcSubmissionsEnabled:true,manualSoundSelectionEnabled:true,

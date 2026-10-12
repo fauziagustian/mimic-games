@@ -11,7 +11,7 @@ export const isAvatar=id=>AVATARS.some(a=>a.id===id);
 export function visualPose(room,player,now=Date.now()){
   if(!room||room.phase==='lobby')return player.ready?'emote-yes':'idle';
   if(room.phase==='listen'&&now<room.recordAt)return 'idle';
-  if(room.phase==='record'||room.phase==='listen'&&now>=room.recordAt)return 'interact-right';
+  if(room.phase==='record'||room.phase==='listen'&&now>=room.recordAt)return room.turnMode==='sequential-v1'&&room.activePlayerId!==player.id?'idle':'interact-right';
   if(room.phase==='collect')return 'idle';
   if(room.phase==='reveal'){
     const result=room.results?.[room.revealIndex];if(result?.playerId!==player.id)return 'idle';
