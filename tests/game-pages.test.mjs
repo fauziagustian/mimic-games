@@ -61,7 +61,7 @@ test('navigation controller: character → create → lobby → room, invitation
     localStorage,sessionStorage:ss,location,history:{pushState(a,b,url){location.href=new URL(url,location).href;},replaceState(a,b,url){location.href=new URL(url,location).href;}},
     document:{querySelector:s=>s==='#joinForm button'?joinButton:nodes.get(s)||null,querySelectorAll:()=>[]},window:{scrollTo(){}},
     avatarStage:()=>({detach(){},sync(state){avatarStates.push(state);},mount(target,state){avatarStates.push(state);}}),avatarImage:()=>'',preferredAvatar:()=> 'male-a',
-    stopAudio(){},drawWave(){},setTimeout:()=>0,clearTimeout(){},
+    stopAudio(){},drawWave(){},setTimeout:()=>0,clearTimeout(){},AbortController,
     api:async(path,options)=>{calls.push({path,options});if(path==='/rooms'||path.endsWith('/join'))return {code:'ABCDEF',token:'a'.repeat(64)};if(path.endsWith('/name')){if(rejectName)throw new Error('Save failed');mockRoom={...mockRoom,revision:mockRoom.revision+1,players:mockRoom.players.map(p=>p.id==='a'?{...p,name:options.body.name}:p)};}if(path==='/rooms/ABCDEF')return {...mockRoom,serverTime:Date.now()};return {ok:true};},
   });
   const source=(await readFile('public/app.js','utf8')).replace(/^import .*;\n/gm,'').split('mountNavigation();window.addEventListener')[0];

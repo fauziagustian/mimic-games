@@ -11,7 +11,8 @@ const clockRoom=()=>({turnMode:'sequential-v1',turnIndex:0,round:1,phase:'listen
 test('Ready → 3 → 2 → 1 → Start boundaries derive from the shared server clock',()=>{
   const room=clockRoom();
   for(const [now,want] of [[0,'listen'],[5999,'listen'],[6000,'Ready'],[6999,'Ready'],[7000,'3'],[8000,'2'],[9000,'1'],[9999,'1'],[10000,'Start'],[10999,'Start'],[11000,'record'],[14999,'record'],[15000,'collect']])assert.equal(turnCue(room,now),want);
-  assert.equal(turnKey(room),'1:0');assert.equal(turnKey({...room,turnIndex:1}),'1:1');
+  assert.equal(turnKey(room),'1:a');assert.equal(turnKey({...room,turnIndex:1}),'1:a');
+  assert.equal(turnKey({...room,activePlayerId:'b'}),'1:b');
   assert.equal(mayCapture(room,9999),false);assert.equal(mayCapture(room,10000),true);assert.equal(mayCapture(room,14999),true);assert.equal(mayCapture(room,15000),false);
   assert.equal(mayCapture({...room,me:'b'},10000),false);assert.equal(mayCapture({...room,phase:'collect'},10000),false);
   assert.equal(visualPose(room,{id:'a'},10000),'interact-right');assert.equal(visualPose(room,{id:'b'},10000),'idle');

@@ -1,6 +1,6 @@
 // Pure clock helpers shared by the UI and tests. Never use a local countdown counter.
 export const isSequential = room => room?.turnMode === 'sequential-v1';
-export const turnKey = room => `${room.round}:${isSequential(room) ? room.turnIndex : 'all'}`;
+export const turnKey = room => `${room.round}:${isSequential(room) ? room.activePlayerId ?? room.turnIndex : 'all'}`;
 export const isMyTurn = room => !isSequential(room) || room.activePlayerId === room.me;
 export function mayCapture(room, now) {
   return !!room && isMyTurn(room) && ['listen', 'record'].includes(room.phase)
