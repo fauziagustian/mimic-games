@@ -1,6 +1,7 @@
 import {fail,text,id,integer,limitedBody,pcmFromWav,digest} from './validation.js';
 import {randomQueue} from '../public/catalog.js';
-import {analyzeAudio,compareAudio} from '../public/scoring.js';
+import {analyzeAudio} from '../public/scoring.js';
+import {scoreSound,SCORING_VERSION} from '../public/scoring-detail.js';
 import {DEFAULT_AVATAR,isAvatar} from '../public/avatars.js';
 import {siteSettings} from './control.js';
 import {isSequential} from '../public/turns.js';
@@ -170,7 +171,7 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     const ip=await hashToken(req.headers.get('cf-connecting-ip')||'local'),bucket=`${matchType==='solo'?'solo':'room'}-limit:${ip}:${Math.floor(Date.now()/3600000)}`;
     await db.run("INSERT INTO config(id,value) VALUES(?,'1') ON CONFLICT(id) DO UPDATE SET value=CAST(value AS INTEGER)+1",bucket);
     if(Number((await db.one('SELECT value FROM config WHERE id=?',bucket)).value)>(matchType==='solo'?240:30))fail(429,'Terlalu banyak permintaan match. Coba lagi nanti / Too many match requests. Try again later.');
-    let sounds=catalog.sounds.filter(s=>s.categoryId===b.categoryId&&(b.language==='all'||s.language===b.language)&&(mode!=='ranked'||s.ranked)&&s.duration<=catalog.rules.recordSeconds);
+    let sounds=catalog.sounds.filter(s=>s.categoryId===b.categoryId&&(b.language==='all'||s.language===b.language)&&(mode!=='ranked'||s.ranked)&&s.duration<=catalog.rules.recordSeconds&&s.quality?.usable!==false);
     if(b.soundIds!==undefined){
       if(matchType==='solo')fail(400,'Solo menggunakan sound acak sesuai kategori / Solo uses a random category pool.');
       if(mode==='ranked')fail(400,'Kompetitif selalu acak / Ranked always uses random selection.');
@@ -179,7 +180,7 @@ export async function roomRoutes(req,env,db,user,getCatalog){
       sounds=sounds.filter(s=>b.soundIds.includes(s.id));
     }
     if(!sounds.length)fail(400,'No sounds match this selection / Pilihan ini belum memiliki sound.');
-    const token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),matchId=crypto.randomUUID(),code=roomCode(),name=validName(b.name),rules={...catalog.rules,profile,maxPlayers:capacity};
+    const token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),matchId=crypto.randomUUID(),code=roomCode(),name=validName(b.name),rules={...catalog.rules,asrModel:catalog.rules.asrModel||'tiny',scoringVersion:SCORING_VERSION,profile,maxPlayers:capacity};
     const clips=[];for(const sound of sounds){const row=await db.one('SELECT data FROM sounds WHERE id=?',sound.id);clips.push({...JSON.parse(row.data),...sound});}
     const state={hostId:uid,phase:'lobby',players:[{id:uid,name,total:0,ready:false,avatarId:avatar(b.avatarId),lastSeenAt:Date.now()}],mode,profile,categoryId:b.categoryId,language:b.language,matchType,capacity,practice:false,rules,clips,queue:[],round:0};
     if(matchType==='solo')return json({code:await joinSolo(db,state,uid,await hashToken(token)),token});
@@ -248,7 +249,9 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     if(isSequential(state)&&state.activePlayerId!==player.user_id)fail(409,'Belum giliran kamu / It is not your turn.');
     const bytes=await limitedBody(req,480100),samples=pcmFromWav(bytes);if(samples.length/16000>state.recordSeconds+0.5)fail(400,'Recording too long.');
     let transcript='';try{transcript=text(decodeURIComponent(req.headers.get('X-Transcript')||''),300,false);}catch{fail(400,'Invalid transcript.');}
-    const sound=state.clips.find(s=>s.id===state.queue[round-1]),analysis=analyzeAudio(samples),score=compareAudio(sound.profile,analysis,sound.text,transcript,state.rules),audioHash=await digest(samples.buffer);
+    const transcriptSource=req.headers.get('X-Transcript-Source')==='unavailable'?'unavailable':'browser-asr';
+    if(transcriptSource==='unavailable')transcript='';
+    const sound=state.clips.find(s=>s.id===state.queue[round-1]),analysis=analyzeAudio(samples),score=scoreSound(sound.profile,analysis,sound.text,transcript,state.rules,sound.kind||'speech',transcriptSource),audioHash=await digest(samples.buffer);
     const takeId=crypto.randomUUID(),audioKey=`attempts/${takeId}.wav`,data={id:takeId,score};
     let eligible=true;
     if(state.mode==='ranked'){
@@ -261,7 +264,7 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     // inside the insert transaction; never accept an orphan take after eviction.
     const liveTurn="EXISTS(SELECT 1 FROM rooms r JOIN members m ON m.match_id=r.match_id WHERE r.code=? AND m.id=? AND r.expires_at>? AND json_extract(r.data,'$.round')=? AND json_extract(r.data,'$.phase') IN ('listen','record','collect') AND json_extract(r.data,'$.collectUntil')>=? AND (json_extract(r.data,'$.turnMode') IS NOT 'sequential-v1' OR json_extract(r.data,'$.activePlayerId')=m.user_id) AND EXISTS(SELECT 1 FROM json_each(r.data,'$.players') WHERE json_extract(value,'$.id')=m.user_id))";
     const ops=[db.statement(`INSERT INTO takes(id,match_id,round,user_id,data,audio_key) SELECT ?,?,?,?,?,? WHERE ${liveTurn}`,takeId,row.match_id,round,player.user_id,JSON.stringify(data),audioKey,code,player.id,Date.now(),round,Date.now())];
-    if(state.mode==='ranked'&&eligible){const review={sound:{id:sound.id,title:sound.title,text:sound.text,url:sound.url,profile:sound.profile,revision:sound.revision},analysis,rules:state.rules,suggestedTranscript:transcript};ops.push(db.statement('INSERT INTO attempts(id,match_id,round,user_id,name,category_id,sound_id,language,version,status,data,audio_key,audio_hash,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM takes WHERE id=?)',takeId,row.match_id,round,player.user_id,player.name,sound.categoryId,sound.id,sound.language,state.rules.version,'pending',JSON.stringify(review),audioKey,audioHash,Date.now(),takeId));}
+    if(state.mode==='ranked'&&eligible){const review={sound:{id:sound.id,title:sound.title,text:sound.text,kind:sound.kind||'speech',url:sound.url,profile:sound.profile,revision:sound.revision},analysis,rules:state.rules,suggestedTranscript:transcript};ops.push(db.statement('INSERT INTO attempts(id,match_id,round,user_id,name,category_id,sound_id,language,version,status,data,audio_key,audio_hash,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM takes WHERE id=?)',takeId,row.match_id,round,player.user_id,player.name,sound.categoryId,sound.id,sound.language,state.rules.version,'pending',JSON.stringify(review),audioKey,audioHash,Date.now(),takeId));}
     try{const [written]=await db.batch(ops);if(!written.meta.changes)fail(409,'Giliran sudah berakhir atau pemain sudah keluar / Turn ended or player left.');}catch(e){await env.BUCKET.delete(audioKey);if(await db.one('SELECT id FROM takes WHERE match_id=? AND round=? AND user_id=?',row.match_id,round,player.user_id))return json({received:true,duplicate:true});throw e;}
     return json({received:true,rankedStatus:data.rankedStatus});
   }

@@ -755,6 +755,17 @@ details p {
   margin: 0;
   font-size: 14px;
 }
+.score-detail .transcript {
+  color: #f6f5eb;
+  overflow-wrap: anywhere;
+}
+.score-detail .metric { align-items: baseline; flex-wrap: wrap; }
+.score-detail .metric b { white-space: nowrap; }
+#scoreLab fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+#scoreLab audio { display: block; width: 100%; max-width: 100%; margin: 12px 0; }
+#scoreLab audio[hidden] { display: none; }
+#scoreLab .button { margin: 12px 0; }
+#labReference p, #labStatus { overflow-wrap: anywhere; }
 .confetti {
   position: absolute;
   inset: 0;

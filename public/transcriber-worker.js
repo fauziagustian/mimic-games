@@ -1,12 +1,17 @@
-let pipelinePromise;
+import {ASR_MODELS,asrModel} from './asr-config.js';
+let pipelinePromise,loadedModel;
 let step = "mulai";
 let queue = Promise.resolve();
 self.onmessage = (event) => {
   queue = queue.then(() => handleRequest(event));
 };
 async function handleRequest({ data }) {
-  const { id, type, audio, language = "indonesian" } = data;
+  const { id, type, audio, language = "indonesian" } = data, modelKey=asrModel(data.model);
   try {
+    if(!['load','transcribe'].includes(type))throw new Error('Permintaan ASR tidak valid.');
+    if(type==='transcribe'&&(!(audio instanceof Float32Array)||audio.length<4000||audio.length>240000||audio.some(x=>!Number.isFinite(x))))throw new Error('Audio ASR harus mono 16 kHz, 0,25–15 detik.');
+    if(pipelinePromise&&loadedModel!==modelKey){await (await pipelinePromise).dispose();pipelinePromise=null;}
+    loadedModel=modelKey;
     if (!pipelinePromise)
       pipelinePromise = (async () => {
         step = "memuat pustaka suara";
@@ -17,7 +22,7 @@ async function handleRequest({ data }) {
         env.backends.onnx.wasm.numThreads = 1;
         return pipeline(
           "automatic-speech-recognition",
-          "onnx-community/whisper-tiny",
+          ASR_MODELS[modelKey],
           {
             dtype: "q8",
             device: "wasm",
@@ -33,7 +38,7 @@ async function handleRequest({ data }) {
       });
     const model = await pipelinePromise;
     if (type === "load") {
-      self.postMessage({ id, type: "ready" });
+      self.postMessage({ id, type: "ready", model:modelKey });
       return;
     }
     step = "membaca ucapan";
@@ -44,7 +49,7 @@ async function handleRequest({ data }) {
       max_new_tokens: 96,
       temperature: 0,
     });
-    self.postMessage({ id, type: "result", text: result.text.trim() });
+    self.postMessage({ id, type: "result", text: result.text.trim(), model:modelKey });
   } catch (e) {
     console.error("MIMIC juri:", step, e.message);
     self.postMessage({

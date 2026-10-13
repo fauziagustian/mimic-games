@@ -2,6 +2,8 @@ import {database} from './db.js';
 import {HttpError,fail,text,integer,id,validateRules,validateLanguage,pcmFromWav,digest,limitedBody} from './validation.js';
 import {DEFAULT_RULES,LANGUAGES,CATEGORIES,SEED_SOUNDS,randomQueue} from '../public/catalog.js';
 import {analyzeAudio,compareAudio} from '../public/scoring.js';
+import {scoreSound,audioQuality,SOUND_KINDS} from '../public/scoring-detail.js';
+import {scoringLab} from './scoring-lab.js';
 import references from '../work/reference-seeds.json';
 import {roomRoutes} from './rooms.js';
 import {communityRoutes} from './community.js';
@@ -22,7 +24,7 @@ async function seed(db){
   ops.push(db.statement("INSERT OR IGNORE INTO config(id,value) VALUES('initialized','1')"));
   await db.batch(ops);
 }
-const visibleSound=row=>{const {profile,audioHash,audioKey,...data}=parsed(row);return {...data,id:row.id,categoryId:row.category_id,language:row.language,active:!!row.active,revision:row.revision};};
+const visibleSound=row=>{const {profile,audioHash,audioKey,...data}=parsed(row);return {...data,kind:data.kind||'speech',quality:audioQuality(profile),id:row.id,categoryId:row.category_id,language:row.language,active:!!row.active,revision:row.revision};};
 async function catalog(db,admin=false){
   const [categories,languages,sounds,rule]=await Promise.all([
     db.all(`SELECT * FROM categories ${admin?'':'WHERE active=1'}`),db.all(`SELECT * FROM languages ${admin?'':'WHERE active=1'}`),
@@ -55,6 +57,7 @@ async function handle(req,env){
   if(p==='/api/rooms'||p.startsWith('/api/rooms/')){const response=await roomRoutes(req,env,db,user,catalog);if(response)return response;}
   if(p==='/api/catalog'&&method==='GET')return json(await catalog(db));
   if(p.startsWith('/api/admin/'))requireAdmin(user);
+  if(p==='/api/admin/scoring-lab'){const response=await scoringLab(req,db,user,catalog);if(response)return response;}
   if(p==='/api/community'||p.startsWith('/api/community/')||p.startsWith('/api/admin/community')){const response=await communityRoutes(req,env,db,user);if(response)return response;}
   if(p==='/api/admin/catalog'&&method==='GET')return json(await catalog(db,true));
   if(p==='/api/admin/rules'&&method==='POST'){
@@ -74,10 +77,11 @@ async function handle(req,env){
   }
   if(p==='/api/admin/upload'&&method==='POST'){
     const bytes=await limitedBody(req,480100),samples=pcmFromWav(bytes),uploadId=crypto.randomUUID(),audioKey=`library/${uploadId}.wav`;
+    const profile=analyzeAudio(samples),quality=audioQuality(profile);if(!quality.usable)fail(422,'Sound referensi hening/tidak cukup jelas / Reference sound is silent or unusable.');
     await env.BUCKET.put(audioKey,bytes,{httpMetadata:{contentType:'audio/wav'}});
-    const data={audioKey,profile:analyzeAudio(samples),audioHash:await digest(samples.buffer),duration:samples.length/16000};
+    const data={audioKey,profile,audioHash:await digest(samples.buffer),duration:samples.length/16000};
     await db.run('INSERT INTO config(id,value) VALUES(?,?)',`upload:${uploadId}`,JSON.stringify(data));
-    return json({id:uploadId,url:`/api/media/${uploadId}`,duration:data.duration});
+    return json({id:uploadId,url:`/api/media/${uploadId}`,duration:data.duration,quality});
   }
   if(p==='/api/admin/sounds'&&method==='POST'){
     const b=await body(req);id(b.id);id(b.categoryId);validateLanguage(b.language);
@@ -89,8 +93,10 @@ async function handle(req,env){
     if(audio?.ugcId&&!await db.one("SELECT id FROM community_submissions WHERE id=? AND status='approved'",audio.ugcId))fail(409,'UGC sudah ditarik / This UGC was withdrawn.');
     if(b.uploadId){id(b.uploadId);const upload=await db.one('SELECT value FROM config WHERE id=?',`upload:${b.uploadId}`);if(!upload)fail(400,'Upload not found.');audio={...JSON.parse(upload.value),url:`/api/media/${b.uploadId}`};}
     if(!audio)fail(400,'Upload audio first.');
+    if(!audioQuality(audio.profile).usable)fail(422,'Ganti referensi yang hening/tidak layak / Replace the unusable reference.');
+    const kind=b.kind??(old?parsed(old).kind:undefined)??'speech';if(!SOUND_KINDS.includes(kind))fail(400,'Invalid sound type.');
     if(typeof b.active!=='boolean'||typeof b.ranked!=='boolean')fail(400,'Sound status required.');
-    const data={title:text(b.title,80),text:text(b.text,300),source:text(b.source,120),rights:text(b.rights,400),ranked:b.ranked,
+    const data={title:text(b.title,80),text:text(b.text??'',300,kind==='speech'),kind,source:text(b.source,120),rights:text(b.rights,400),ranked:b.ranked,
       url:audio.url,audioKey:audio.audioKey||null,audioHash:audio.audioHash,profile:audio.profile,duration:audio.duration};
     if(audio.ugcId)Object.assign(data,{ugcId:audio.ugcId,creatorName:audio.creatorName});
     const revision=(old?.revision||0)+1;
@@ -179,7 +185,7 @@ async function handle(req,env){
       if(row.user_id===user.id)fail(403,'An admin cannot approve their own attempt.');
       const b=await body(req);if(!['approved','rejected'].includes(b.status))fail(400,'Invalid decision.');
       const data=parsed(row),transcript=text(b.transcript??'',300,false),note=text(b.note??'',300,b.status==='rejected');
-      const score=b.status==='approved'?compareAudio(data.sound.profile,data.analysis,data.sound.text,transcript,data.rules):null;
+      const score=b.status==='approved'?scoreSound(data.sound.profile,data.analysis,data.sound.text,transcript,data.rules,data.sound.kind||'speech','admin-verified'):null;
       data.reviewNote=note;data.verifiedTranscript=transcript;data.score=score;
       const changes=await db.batch([db.statement("UPDATE attempts SET status=?,score=?,data=?,reviewed_at=?,reviewer=? WHERE id=? AND status='pending'",b.status,score?.total??null,JSON.stringify(data),Date.now(),user.id,row.id),log(db,user,'attempt.'+b.status,row.id)]);
       if(!changes[0].meta.changes)fail(409,'Another admin already reviewed this attempt.');return json({status:b.status,score});

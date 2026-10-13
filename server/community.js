@@ -1,5 +1,6 @@
 import {HttpError,fail,text,id,integer,validateLanguage,limitedBody,pcmFromWav,digest} from './validation.js';
 import {analyzeAudio} from '../public/scoring.js';
+import {SOUND_KINDS,audioQuality} from '../public/scoring-detail.js';
 
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const LIMIT=24, DAY=86400000;
@@ -11,7 +12,7 @@ async function body(req,max=12000){
 }
 function view(row){
   const d=JSON.parse(row.data);
-  return {id:row.id,title:d.title,text:d.text,creatorName:d.creatorName,source:d.source,rights:d.rights,
+  return {id:row.id,title:d.title,text:d.text,kind:d.kind||'speech',quality:audioQuality(d.profile),creatorName:d.creatorName,source:d.source,rights:d.rights,
     categoryId:row.category_id,language:row.language,duration:d.duration,status:row.status,
     createdAt:row.created_at,reviewedAt:row.reviewed_at,note:row.review_note,soundId:row.sound_id,
     active:!!row.sound_active,ranked:!!(row.sound_data&&JSON.parse(row.sound_data).ranked),
@@ -51,7 +52,8 @@ export async function communityRoutes(req,env,db,user){
     const quota=await db.one("SELECT sum(CASE WHEN created_at>? THEN 1 ELSE 0 END) AS recent,sum(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending FROM community_submissions WHERE owner_id=?",Date.now()-DAY,user.id);
     if(quota.recent>=5||quota.pending>=10)fail(429,'Batas 5 kiriman/24 jam dan 10 menunggu / Limit: 5 submissions per 24h, 10 pending.');
     if(b.consent!==true)fail(400,'Persetujuan izin dan publikasi diperlukan / Publication permission is required.');
-    const data={title:text(b.title,80),text:text(b.text,300),creatorName:text(b.creatorName,40),source:text(b.source,120),rights:text(b.rights,400),consentVersion:1};
+    const kind=b.kind??'speech';if(!SOUND_KINDS.includes(kind))fail(400,'Invalid sound type.');
+    const data={title:text(b.title,80),text:text(b.text??'',300,kind==='speech'),kind,creatorName:text(b.creatorName,40),source:text(b.source,120),rights:text(b.rights,400),consentVersion:1};
     const categoryId=id(b.categoryId),language=validateLanguage(b.language);
     if(!await db.one('SELECT id FROM categories WHERE id=? AND active=1',categoryId)||!await db.one('SELECT id FROM languages WHERE id=? AND active=1',language))fail(400,'Kategori/bahasa tidak aktif / Category or language is inactive.');
     if(typeof b.audio!=='string'||b.audio.length>640136||!b.audio.length||!/^[A-Za-z0-9+/]*={0,2}$/.test(b.audio)||b.audio.length%4)fail(400,'Audio tidak valid / Invalid audio.');
@@ -59,6 +61,7 @@ export async function communityRoutes(req,env,db,user){
     const samples=pcmFromWav(bytes.buffer);
     let energy=0;for(const v of samples)energy+=v*v;if(Math.sqrt(energy/samples.length)<0.002)fail(422,'Sound terlalu hening / The sound is too quiet.');
     Object.assign(data,{profile:analyzeAudio(samples),audioHash:await digest(samples.buffer),duration:samples.length/16000});
+    if(!audioQuality(data.profile).usable)fail(422,'Audio tidak layak dinilai / Audio cannot be scored.');
     const submissionId=crypto.randomUUID(),audioKey=`community/${submissionId}.wav`,now=Date.now();
     // The INSERT atomically enforces quota; each contender owns a distinct R2 key.
     await env.BUCKET.put(audioKey,bytes,{httpMetadata:{contentType:'audio/wav'}});
@@ -115,6 +118,9 @@ export async function communityRoutes(req,env,db,user){
       if(b.checked!==true)fail(400,'Periksa audio, transkrip, izin, dan keamanan konten / Review audio, transcript, permission and content safety.');
       if(!await db.one('SELECT id FROM categories WHERE id=? AND active=1',row.category_id)||!await db.one('SELECT id FROM languages WHERE id=? AND active=1',row.language))fail(409,'Aktifkan kategori/bahasa sebelum menyetujui / Enable category and language first.');
       const {consentVersion,...data}=JSON.parse(row.data);soundId='ugc-'+row.id;
+      const kind=b.kind??data.kind??'speech';if(!SOUND_KINDS.includes(kind))fail(400,'Invalid sound type.');
+      if(kind==='speech'&&!data.text?.trim())fail(400,'Ucapan memerlukan transkrip / Speech needs a transcript.');
+      data.kind=kind;
       Object.assign(data,{ugcId:row.id,ranked:false,url:`/api/community/submissions/${row.id}/audio`,audioKey:row.audio_key});
       statements.push(db.statement("INSERT INTO sounds(id,category_id,language,data,active,revision) SELECT ?,?,?,?,1,1 WHERE EXISTS(SELECT 1 FROM community_submissions WHERE id=? AND status='pending')",soundId,row.category_id,row.language,JSON.stringify(data),row.id));
     }

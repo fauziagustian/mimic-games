@@ -1,6 +1,6 @@
 # MIMIC — rumus skor dan batas keakuratan
 
-Dokumen ini menjelaskan implementasi `public/scoring.js` dan `public/transcriber-worker.js`, bukan hasil benchmark suara manusia. Konfigurasi publik yang diperiksa pada pembaruan ini: musim 1, bobot Precision 30/35/20/15, ambang applause 50, ambang sempurna 98. Admin bisa mengubah konfigurasi; setiap room memakai snapshot aturan ketika dibuat.
+Dokumen ini menjelaskan implementasi `public/scoring.js`, `public/scoring-detail.js` dan `public/transcriber-worker.js`, bukan hasil benchmark suara manusia. Aturan bawaan: bobot Precision 30/35/20/15, ambang applause 50, ambang sempurna 98. Admin bisa mengubah konfigurasi; setiap room memakai snapshot aturan ketika dibuat. Pembaruan 13 Oktober 2026 memberi room baru versi rubrik `mimic-v2`. Room yang sudah ada tetap memakai versi rumusnya. Leaderboard publik tetap Coming soon.
 
 ## 1. Alur giliran
 
@@ -15,7 +15,7 @@ Permainan yang dimulai setelah pembaruan memakai urutan pemain di lobby: host, l
 
 Client menghitung tampilan dari waktu server dengan estimasi selisih jam, bukan hitungan lokal yang dimulai dari nol setiap polling. Polling kira-kira 1,1 detik; pembaruan countdown 80 ms. Ini bukan jaminan sinkronisasi sample-accurate: latensi, izin mikrofon, autoplay, perangkat, dan tab latar belakang tetap memengaruhi timing. Tetap buka tab dan gunakan headset. Audio pemain tidak disiarkan langsung; pemain lain mendengar **playback setelah penilaian**.
 
-Server menolak take pemain yang bukan giliran aktif, sebelum `recordAt`, setelah batas pengumpulan, atau untuk ronde lain. Satu take per pemain per ronde; retry upload tidak membuat take baru. Party menunggu maksimal 30 detik setelah akhir rekam, Precision 140 detik untuk ASR. Take yang tidak diterima menjadi nol lalu permainan berlanjut. Kemajuan server terjadi saat room dipolling; jika seluruh pemain offline, state dilanjutkan ketika ada yang kembali. Batas room tetap 2 jam; kombinasi banyak ronde/pemain dan timeout panjang dapat mencapai batas ini.
+Server menolak take pemain yang bukan giliran aktif, sebelum `recordAt`, setelah batas pengumpulan, atau untuk ronde lain. Satu take per pemain per ronde; retry upload tidak membuat take baru. Party menunggu maksimal 30 detik setelah akhir rekam, Precision 140 detik untuk ASR. Take yang tidak diterima menjadi nol lalu permainan berlanjut. Kemajuan server terjadi saat room diakses/polling. Heartbeat kedaluwarsa sekitar 30 detik mengeluarkan pemain; jika semua pemain sudah kedaluwarsa, room aktif ditutup saat akses berikutnya. Tidak ada pengisian pemain baru di tengah battle. Batas room tetap 2 jam; kombinasi banyak ronde/pemain dan timeout panjang dapat mencapai batas ini.
 
 Room yang sudah memulai pertandingan sebelum pembaruan menyelesaikan protokol lama. Room baru dan lobby yang baru dimulai memakai giliran berurutan. Muat ulang halaman sebelum memulai pertandingan baru.
 
@@ -29,7 +29,13 @@ Room yang sudah memulai pertandingan sebelum pembaruan menyelesaikan protokol la
 
 ## 3. Transkrip / kosakata (W)
 
-Browser memakai `onnx-community/whisper-tiny`, multilingual, quantization q8, WASM, melalui Transformers.js 3.8.1. Bahasa diambil dari metadata sound; task `transcribe`, temperature 0, maksimal 96 token. Tidak meminta word timestamps atau confidence terkalibrasi. ASR dibutuhkan untuk profil Precision, bukan Party.
+Browser memakai `onnx-community/whisper-tiny` secara default, atau `onnx-community/whisper-base` yang dapat dipilih admin, multilingual, quantization q8, WASM, melalui Transformers.js 3.8.1. Bahasa diambil dari metadata sound; task `transcribe`, temperature 0, maksimal 96 token. Tidak meminta word timestamps atau confidence terkalibrasi. ASR dibutuhkan untuk ucapan pada profil Precision, bukan Party atau efek/nonverbal. Model pilihan aturan disalin ke room saat dibuat; perubahan admin tidak mengubah room lama.
+
+Tidak memakai API transkripsi berbayar atau API key. Model/pustaka diunduh dari Hugging Face/jsDelivr dan inferensi berjalan di perangkat pemain. Audio tidak dikirim ke penyedia ASR; take pertandingan tetap dikirim ke server game untuk penilaian dan playback room. Penggunaan internet, penyimpanan dan komputasi perangkat tetap diperlukan. Base lebih besar; tidak otomatis lebih akurat pada sound game ini, dan sebaiknya diuji di Android/iPhone sebelum dipakai bersama.
+
+Sound referensi wajib ditandai **Ucapan** atau **Efek/nonverbal**. Untuk ucapan, admin menyimpan transkrip yang benar-benar terdengar. Tombol **Buat draft dari audio** membantu transkripsi lokal, tetapi draft harus didengar dan dikoreksi manusia. Referensi tidak dipakai sebagai prompt/jawaban petunjuk ASR pemain. Jika inferensi pemain gagal setelah siap, take tetap diunggah dengan status `unavailable`: W=0 dan bobot kata tidak dibagikan ke komponen lain. Ini tidak menutupi kegagalan dengan skor tinggi. Gagal memuat model saat persiapan tetap membutuhkan retry atau room Party.
+
+Rujukan implementasi: [Transformers.js ASR pipeline](https://huggingface.co/docs/transformers.js/api/pipelines#module_pipelines.AutomaticSpeechRecognitionPipeline) dan [model Whisper Base ONNX](https://huggingface.co/onnx-community/whisper-base).
 
 Teks referensi dan hasil ASR dinormalisasi: huruf kecil, Unicode NFKC, tanda baca menjadi spasi, spasi ganda dirapikan. Token kata memakai `Intl.Segmenter` jika tersedia; ada pemisahan fallback.
 
@@ -79,19 +85,27 @@ Durasi adalah durasi setelah trimming. Energi adalah RMS frame setelah normalisa
 
 ## 8. Total, sempurna, dan reaksi
 
-Precision, bobot aktif yang diperiksa pada pembaruan ini:
+Ucapan / Precision, bobot bawaan:
 
 `Sraw = 0,30P + 0,35W + 0,20T + 0,15R`
 
-Party selalu:
+Ucapan / Party, selama nada referensi cukup terdeteksi:
 
 `Sraw = 0,60P + 0,40R`
+
+Efek/nonverbal pada kedua profil:
+
+`Sraw = 0,60T + 0,40R`
+
+Efek tidak wajib transkrip dan tidak dinilai kata/nadanya; komponen tersebut ditampilkan `—`, bukan gagal. Untuk ucapan dengan kurang dari 3 frame nada referensi yang terdeteksi, bobot P dikeluarkan dan bobot Precision lainnya dinormalisasi berjumlah 100%. Pada Party kasus tersebut menggunakan T=60%, R=40%. Jika admin sebelumnya memberi semua bobot hanya pada nada yang tidak terdeteksi, fallback adalah T=50%, R=50%. Bobot efektif ditampilkan dalam hasil, bukan disembunyikan. Nada yang hilang hanya pada **take pemain** tetap mendapat P=0, bukan menghapus bobotnya.
 
 Jika tidak sempurna: `S = min(99, round(Sraw))`. Contoh Precision: P=80, W=90, T=75, R=85 → Sraw=83,25 → S=83.
 
 Sempurna bukan sekadar total dibulatkan ke 100. Setiap komponen dengan bobot >0 harus mencapai ambang sempurna (bawaan 98); khusus kata, **W harus tepat 100** apabila bobot kata aktif. Maka Precision bawaan membutuhkan P≥98, W=100, T≥98, R≥98; Party membutuhkan P≥98, R≥98. Hanya jika semua syarat terpenuhi total dipromosikan ke **100**. Admin bisa mengubah bobot Precision dan ambang komponen, tetapi aturan kata tetap 100 bila dinilai.
 
-Rekaman hening (`peak<0,008` atau RMS<0,002), voiced frame <3, atau tanpa frame langsung mendapat semua komponen 0, total 0, roast. Take hilang saat timeout juga nol.
+Pada `mimic-v2`, rekaman hening (`peak<0,008` atau RMS<0,002), RMS setelah pengurangan DC <0,002, atau tanpa frame mendapat semua komponen 0, total 0, roast. Unggahan referensi baru seperti ini ditolak. Kurang dari 3 voiced frame pada take menyebabkan P=0, tetapi komponen lain masih dihitung; ini memperbaiki penilaian bunyi tidak periodik. Referensi dengan deteksi nada tidak cukup ditangani dengan bobot di atas. Rubrik legacy tetap mempertahankan perilaku lama (voiced frame <3 membuat semua komponen nol). Take hilang saat timeout juga nol.
+
+Peringatan clipping muncul bila lebih dari 1% sampel memiliki amplitudo absolut ≥0,985. Ini diagnosis sinyal sederhana, bukan pengukur SNR, deteksi mikrofon rusak, atau jaminan audio bersih. Peringatan nada hilang juga bukan bukti pemain tidak bersuara.
 
 - Bawaan 0–49: roast.
 - Bawaan 50–99: applause.
@@ -103,7 +117,7 @@ Admin dapat mengganti ambang applause, teks dan audio reaksi. Skor room dijumlah
 
 | Komponen | Sudah ada | Persentase akurasi terverifikasi |
 |---|---|---|
-| Transkrip | Whisper tiny multilingual + kemiripan token | Belum diukur pada dataset game Indonesia/Inggris |
+| Transkrip | Whisper Tiny default, Base opsional + kemiripan token | Belum diukur pada dataset manusia game Indonesia/Inggris |
 | Nada | Autocorrelation + semitone/DTW | Belum diuji terhadap ground truth pitch suara manusia |
 | Notasi | Belum ada deteksi/penilaian not terpisah | Tidak berlaku / belum tersedia |
 | Timbre | MFCC + DTW | Belum dikalibrasi dengan rating mimic manusia; bukan biometrik |
@@ -112,3 +126,9 @@ Admin dapat mengganti ambang applause, teks dan audio reaksi. Skor room dijumlah
 Tes otomatis memverifikasi rumus, boundary, giliran, dan keamanan alur. Lulus tes perangkat lunak **tidak** menunjukkan akurasi transkripsi atau kemiripan suara manusia. Tidak ada angka 90%, 95%, atau 99% yang bisa diklaim secara jujur untuk komponen tersebut saat ini.
 
 Untuk mengukur dengan benar, siapkan data uji berizin yang terpisah dari penyetelan skor: penutur Indonesia/Inggris, variasi aksen, gaya meme, perangkat dan kondisi bising; beberapa mimic per sound. Bandingkan ASR dengan transkrip manusia (WER/CER), pitch dengan anotasi f0 (error cents dan kesalahan voiced/unvoiced), notasi dengan onset/pitch/durasi not setelah fiturnya dibangun, serta timbre/total dengan rating beberapa penilai manusia dan korelasi/agreement. Laporkan hasil per bahasa/kondisi beserta jumlah sampel, bukan satu angka perkiraan global. Ini rencana validasi, **belum dijalankan**.
+
+## 10. Lab Penilaian dan uji ASR lokal
+
+Owner/Admin dapat membuka `/admin?tab=scoring`, memilih referensi katalog, mengunggah file mimic dan menjalankan transkripsi Tiny/Base. Tekan **Hitung skor uji** untuk menjalankan rumus di server yang sama. Label membedakan ASR otomatis dan teks yang dikoreksi manual. Koreksi sesuai rekaman pemain, jangan salin kunci referensi. Audio uji hanya diproses dalam request, tidak ditulis ke R2 atau tabel take/attempt. Pengujian dibatasi 60 request/jam per admin, dengan penghitung pemakaian di database. Tidak mengubah katalog, skor pertandingan, atau leaderboard.
+
+Uji inferensi lokal nyata pada 13 Oktober 2026 menggunakan runtime Node/CPU (bukan browser/WASM) berhasil memuat Tiny dan Base q8 serta mentranskripsi dua starter sintetis, satu Indonesia dan satu Inggris. Setelah normalisasi, kemiripan kata kedua model terhadap teks starter itu adalah 100. Ini hanya empat inferensi pada audio sintetis bersih, bukan estimasi akurasi bahasa, suara manusia, meme, atau kecepatan di ponsel. Tes otomatis juga menggunakan API/DOM doubles dan Worker D1/R2 lokal; Android/iPhone fisik belum diverifikasi.

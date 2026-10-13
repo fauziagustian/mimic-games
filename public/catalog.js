@@ -1,5 +1,6 @@
 export const DEFAULT_RULES = {
   rounds:3, maxPlayers:8, turnSeconds:90, recordSeconds:15,
+  asrModel:'tiny',
   weights:{pitch:30,words:35,timbre:20,rhythm:15}, perfectThreshold:98,
   applauseThreshold:50, rankedEnabled:true, minRankedSounds:1,
   roastId:'Nadanya ke mana, percaya dirinya ke mana!', roastEn:'The confidence was there. The notes were not!',

@@ -105,11 +105,13 @@ export function analyzeAudio(samples) {
   )
     throw new Error("Audio harus 0,1–15 detik.");
   let peak = 0,
-    sum = 0;
+    sum = 0, dc = 0, clipped = 0;
   for (const v of samples) {
     if (!Number.isFinite(v)) throw new Error("Audio tidak valid.");
     peak = Math.max(peak, Math.abs(v));
     sum += v * v;
+    dc += v;
+    if(Math.abs(v)>=.985)clipped++;
   }
   const rms = Math.sqrt(sum / samples.length),
     silent = peak < 0.008 || rms < 0.002;
@@ -172,6 +174,9 @@ export function analyzeAudio(samples) {
     frames: compact,
     duration: trimmed.length / SAMPLE_RATE,
     rms,
+    acRms:Math.sqrt(Math.max(0,rms*rms-(dc/samples.length)**2)),
+    peak,
+    clippedRatio:clipped/samples.length,
     silent,
     voiced: frames.filter((f) => f.pitch > 0).length,
   };

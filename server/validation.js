@@ -9,6 +9,7 @@ export function validateRules(input){
   integer(r.rounds,1,10);integer(r.maxPlayers,2,8);integer(r.turnSeconds,30,180);integer(r.recordSeconds,3,15);
   integer(r.applauseThreshold,1,99);integer(r.perfectThreshold,90,100);integer(r.minRankedSounds,1,10);
   if(typeof r.rankedEnabled!=='boolean')fail(400,'Invalid ranked setting.');
+  if(!['tiny','base'].includes(r.asrModel))fail(400,'Model transkripsi harus Tiny atau Base / Choose Tiny or Base.');
   if(!r.weights||Object.keys(r.weights).sort().join(',')!=='pitch,rhythm,timbre,words')fail(400,'Four scoring weights are required.');
   if(Object.values(r.weights).reduce((s,n)=>s+integer(n,0,100),0)!==100)fail(400,'Bobot penilaian harus berjumlah 100%.');
   for(const key of ['roastId','roastEn','applauseId','applauseEn','perfectId','perfectEn'])r[key]=text(r[key],200);
