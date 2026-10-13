@@ -1,4 +1,5 @@
 import {t,escapeHTML as esc} from './platform.js';
+import {categoryScope} from './categories.js';
 export function soundPicker({catalog,settings,account,getSetup,onChange}){
   let manual=false,chosen=new Set();
   return {
@@ -6,7 +7,8 @@ export function soundPicker({catalog,settings,account,getSetup,onChange}){
     reset(){manual=false;chosen.clear();},
     render(){
       const setup=getSetup(),allowed=settings.manualSoundSelectionEnabled&&setup.mode!=='ranked'&&setup.matchType!=='solo';if(!allowed){manual=false;chosen.clear();}
-      const eligible=catalog.sounds.filter(c=>c.quality?.usable!==false&&c.categoryId===setup.categoryId&&(setup.language==='all'||c.language===setup.language)&&(setup.mode!=='ranked'||c.ranked)&&c.duration<=catalog.rules.recordSeconds);
+      const themeIds=new Set(categoryScope(catalog.categories,setup.categoryId));
+      const eligible=catalog.sounds.filter(c=>c.quality?.usable!==false&&themeIds.has(c.categoryId)&&(setup.language==='all'||c.language===setup.language)&&(setup.mode!=='ranked'||c.ranked)&&c.duration<=catalog.rules.recordSeconds);
       const ids=new Set(eligible.map(s=>s.id));chosen=new Set([...chosen].filter(id=>ids.has(id)));
       document.querySelector('#sound-picker-controls')?.remove();document.querySelectorAll('.choose-sound').forEach(el=>el.remove());
       const box=document.createElement('div');box.id='sound-picker-controls';box.className='sound-picker-controls';

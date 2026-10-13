@@ -766,6 +766,10 @@ details p {
 #scoreLab audio[hidden] { display: none; }
 #scoreLab .button { margin: 12px 0; }
 #labReference p, #labStatus { overflow-wrap: anywhere; }
+.category-tree { margin-top: 18px; }
+.category-node { margin-bottom: 18px; }
+.category-node.child { margin-left: 16px; border-left: 2px solid var(--line); padding-left: 10px; }
+.category-node .admin-item b { overflow-wrap: anywhere; }
 .confetti {
   position: absolute;
   inset: 0;

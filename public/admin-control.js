@@ -3,7 +3,7 @@ import {SITE_TEXT_LIMITS} from './site-config.js';
 import {applySiteChrome} from './site-ui.js';
 const tr=(id,en)=>esc(t(id,en));
 export function adminTabs(role){
-  const tabs=[['overview','Ringkasan','Overview'],['website','Website dinamis','Website content'],['operations','Operasional','Operations'],['sounds','Pustaka suara','Sound library'],['scoring','Lab Penilaian','Scoring Lab'],['community','Moderasi UGC','UGC moderation'],['categories','Kategori','Categories'],['languages','Bahasa','Languages'],['rules','Aturan & reaksi','Rules & reactions'],['review','Verifikasi skor','Score review'],['rooms','Pantau room','Room monitor'],['staff','Akses pengelola','Staff access'],['audit','Riwayat & ekspor','Activity & export']];
+  const tabs=[['overview','Ringkasan','Overview'],['website','Website dinamis','Website content'],['operations','Operasional','Operations'],['sounds','Pustaka suara','Sound library'],['scoring','Lab Penilaian','Scoring Lab'],['community','Moderasi UGC','UGC moderation'],['categories','Tema & subkategori','Themes & subcategories'],['languages','Bahasa','Languages'],['rules','Aturan & reaksi','Rules & reactions'],['review','Verifikasi skor','Score review'],['rooms','Pantau room','Room monitor'],['staff','Akses pengelola','Staff access'],['audit','Riwayat & ekspor','Activity & export']];
   return tabs.filter(([id])=>role==='moderator'?['overview','community','review'].includes(id):id!=='staff'||role==='owner');
 }
 const field=(key,label,value,type='text',max=200)=>`<label for="control-${key}">${esc(label)}</label><input id="control-${key}" name="${key}" type="${type}" maxlength="${max}" value="${esc(value)}" required>`;

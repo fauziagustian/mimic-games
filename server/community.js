@@ -1,6 +1,8 @@
 import {HttpError,fail,text,id,integer,validateLanguage,limitedBody,pcmFromWav,digest} from './validation.js';
 import {analyzeAudio} from '../public/scoring.js';
 import {SOUND_KINDS,audioQuality} from '../public/scoring-detail.js';
+import {categoryScope} from '../public/categories.js';
+import {categoryList,enabledCategory,enabledCategorySQL} from './categories.js';
 
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const LIMIT=24, DAY=86400000;
@@ -30,8 +32,10 @@ export async function communityRoutes(req,env,db,user){
   if(p.startsWith('/api/admin/community'))requireAdmin(user);
 
   if(p==='/api/community'&&method==='GET'){
-    const page=pageOf(u),conditions=["u.status='approved'",'s.active=1','c.active=1','l.active=1'],values=[];
-    for(const [key,column] of [['category','s.category_id'],['language','s.language']]){
+    const page=pageOf(u),conditions=["u.status='approved'",'s.active=1',enabledCategorySQL('c'),'l.active=1'],values=[];
+    const category=u.searchParams.get('category');
+    if(category&&category!=='all'){const scope=categoryScope(await categoryList(db),id(category));conditions.push(scope.length?`s.category_id IN (${scope.map(()=>'?').join(',')})`:'0');values.push(...scope);}
+    for(const [key,column] of [['language','s.language']]){
       const value=u.searchParams.get(key);if(value&&value!=='all'){conditions.push(`${column}=?`);values.push(id(value));}
     }
     const rows=await db.all(`SELECT u.id,u.created_at,s.id AS sound_id,s.category_id,s.language,s.data FROM community_submissions u JOIN sounds s ON s.id=u.sound_id JOIN categories c ON c.id=s.category_id JOIN languages l ON l.id=s.language WHERE ${conditions.join(' AND ')} ORDER BY u.created_at DESC,u.id DESC LIMIT ? OFFSET ?`,...values,LIMIT+1,page*LIMIT);
@@ -55,7 +59,7 @@ export async function communityRoutes(req,env,db,user){
     const kind=b.kind??'speech';if(!SOUND_KINDS.includes(kind))fail(400,'Invalid sound type.');
     const data={title:text(b.title,80),text:text(b.text??'',300,kind==='speech'),kind,creatorName:text(b.creatorName,40),source:text(b.source,120),rights:text(b.rights,400),consentVersion:1};
     const categoryId=id(b.categoryId),language=validateLanguage(b.language);
-    if(!await db.one('SELECT id FROM categories WHERE id=? AND active=1',categoryId)||!await db.one('SELECT id FROM languages WHERE id=? AND active=1',language))fail(400,'Kategori/bahasa tidak aktif / Category or language is inactive.');
+    if(!await enabledCategory(db,categoryId)||!await db.one('SELECT id FROM languages WHERE id=? AND active=1',language))fail(400,'Kategori/bahasa tidak aktif / Category or language is inactive.');
     if(typeof b.audio!=='string'||b.audio.length>640136||!b.audio.length||!/^[A-Za-z0-9+/]*={0,2}$/.test(b.audio)||b.audio.length%4)fail(400,'Audio tidak valid / Invalid audio.');
     let bytes;try{bytes=Uint8Array.from(atob(b.audio),c=>c.charCodeAt(0));}catch{fail(400,'Invalid audio encoding.');}
     const samples=pcmFromWav(bytes.buffer);
@@ -67,7 +71,7 @@ export async function communityRoutes(req,env,db,user){
     await env.BUCKET.put(audioKey,bytes,{httpMetadata:{contentType:'audio/wav'}});
     let inserted;
     try{
-      inserted=await db.run("INSERT INTO community_submissions(id,owner_id,request_id,category_id,language,data,audio_key,created_at) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM community_submissions WHERE owner_id=? AND created_at>?)<5 AND (SELECT count(*) FROM community_submissions WHERE owner_id=? AND status='pending')<10 AND EXISTS(SELECT 1 FROM categories WHERE id=? AND active=1) AND EXISTS(SELECT 1 FROM languages WHERE id=? AND active=1) ON CONFLICT(owner_id,request_id) DO NOTHING",submissionId,user.id,requestId,categoryId,language,JSON.stringify(data),audioKey,now,user.id,now-DAY,user.id,categoryId,language);
+      inserted=await db.run(`INSERT INTO community_submissions(id,owner_id,request_id,category_id,language,data,audio_key,created_at) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM community_submissions WHERE owner_id=? AND created_at>?)<5 AND (SELECT count(*) FROM community_submissions WHERE owner_id=? AND status='pending')<10 AND EXISTS(SELECT 1 FROM categories c WHERE c.id=? AND ${enabledCategorySQL('c')}) AND EXISTS(SELECT 1 FROM languages WHERE id=? AND active=1) ON CONFLICT(owner_id,request_id) DO NOTHING`,submissionId,user.id,requestId,categoryId,language,JSON.stringify(data),audioKey,now,user.id,now-DAY,user.id,categoryId,language);
     }catch(e){
       // A transport error may follow a committed write. Never delete a referenced object.
       const committed=await db.one('SELECT id FROM community_submissions WHERE id=?',submissionId);
@@ -86,7 +90,7 @@ export async function communityRoutes(req,env,db,user){
     const row=await db.one(`${joined} WHERE u.id=?`,id(audio[1]));
     if(!row)fail(404,'Audio not found.');
     // Pending, rejected and withdrawn audio never becomes public, including by guessed URL.
-    const published=row.status==='approved'&&row.sound_active&&await db.one('SELECT s.id FROM sounds s JOIN categories c ON c.id=s.category_id JOIN languages l ON l.id=s.language WHERE s.id=? AND s.active=1 AND c.active=1 AND l.active=1',row.sound_id);
+    const published=row.status==='approved'&&row.sound_active&&await db.one(`SELECT s.id FROM sounds s JOIN categories c ON c.id=s.category_id JOIN languages l ON l.id=s.language WHERE s.id=? AND s.active=1 AND ${enabledCategorySQL('c')} AND l.active=1`,row.sound_id);
     if(!published&&user?.id!==row.owner_id&&!user?.admin)fail(404,'Audio not found.');
     const obj=await env.BUCKET.get(row.audio_key);if(!obj)fail(404,'Audio unavailable.');
     return new Response(obj.body,{headers:{'Content-Type':'audio/wav','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
@@ -116,7 +120,7 @@ export async function communityRoutes(req,env,db,user){
     let soundId=null;
     if(b.status==='approved'){
       if(b.checked!==true)fail(400,'Periksa audio, transkrip, izin, dan keamanan konten / Review audio, transcript, permission and content safety.');
-      if(!await db.one('SELECT id FROM categories WHERE id=? AND active=1',row.category_id)||!await db.one('SELECT id FROM languages WHERE id=? AND active=1',row.language))fail(409,'Aktifkan kategori/bahasa sebelum menyetujui / Enable category and language first.');
+      if(!await enabledCategory(db,row.category_id)||!await db.one('SELECT id FROM languages WHERE id=? AND active=1',row.language))fail(409,'Aktifkan kategori/bahasa sebelum menyetujui / Enable category and language first.');
       const {consentVersion,...data}=JSON.parse(row.data);soundId='ugc-'+row.id;
       const kind=b.kind??data.kind??'speech';if(!SOUND_KINDS.includes(kind))fail(400,'Invalid sound type.');
       if(kind==='speech'&&!data.text?.trim())fail(400,'Ucapan memerlukan transkrip / Speech needs a transcript.');

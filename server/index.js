@@ -4,6 +4,9 @@ import {DEFAULT_RULES,LANGUAGES,CATEGORIES,SEED_SOUNDS,randomQueue} from '../pub
 import {analyzeAudio,compareAudio} from '../public/scoring.js';
 import {scoreSound,audioQuality,SOUND_KINDS} from '../public/scoring-detail.js';
 import {scoringLab} from './scoring-lab.js';
+import {categoryScope,categoryEnabled,orderedCategories} from '../public/categories.js';
+import {saveCategory} from './categories.js';
+import {seedThemePack,themePackAudio} from './theme-pack.js';
 import references from '../work/reference-seeds.json';
 import {roomRoutes} from './rooms.js';
 import {communityRoutes} from './community.js';
@@ -27,10 +30,11 @@ async function seed(db){
 const visibleSound=row=>{const {profile,audioHash,audioKey,...data}=parsed(row);return {...data,kind:data.kind||'speech',quality:audioQuality(profile),id:row.id,categoryId:row.category_id,language:row.language,active:!!row.active,revision:row.revision};};
 async function catalog(db,admin=false){
   const [categories,languages,sounds,rule]=await Promise.all([
-    db.all(`SELECT * FROM categories ${admin?'':'WHERE active=1'}`),db.all(`SELECT * FROM languages ${admin?'':'WHERE active=1'}`),
+    db.all('SELECT * FROM categories'),db.all(`SELECT * FROM languages ${admin?'':'WHERE active=1'}`),
     db.all(`SELECT s.* FROM sounds s JOIN categories c ON c.id=s.category_id JOIN languages l ON l.id=s.language ${admin?'':"WHERE s.active=1 AND c.active=1 AND l.active=1 AND NOT EXISTS(SELECT 1 FROM community_submissions u WHERE u.sound_id=s.id AND u.status<>'approved')"} ORDER BY s.id`),
     db.one('SELECT * FROM rules ORDER BY version DESC LIMIT 1')]);
-  return {categories:categories.map(r=>({...parsed(r),id:r.id,active:!!r.active})),languages:languages.map(r=>({...parsed(r),id:r.id,active:!!r.active})),sounds:sounds.map(visibleSound),rules:{...parsed(rule),version:rule.version}};
+  const tree=orderedCategories(categories.map(r=>({...parsed(r),id:r.id,parentId:parsed(r).parentId||null,revision:parsed(r).revision||0,active:!!r.active})));
+  return {categories:admin?tree:tree.filter(c=>categoryEnabled(tree,c.id)),languages:languages.map(r=>({...parsed(r),id:r.id,active:!!r.active})),sounds:sounds.filter(r=>admin||categoryEnabled(tree,r.category_id)).map(visibleSound),rules:{...parsed(rule),version:rule.version}};
 }
 const log=(db,user,action,target)=>db.statement('INSERT INTO audit(id,actor,action,target,created_at) VALUES(?,?,?,?,?)',crypto.randomUUID(),user.id,action,target,Date.now());
 async function match(db,matchId){const row=await db.one('SELECT * FROM matches WHERE id=?',id(matchId));if(!row)fail(404,'Match not found.');return {...row,...parsed(row)};}
@@ -50,7 +54,8 @@ async function handle(req,env){
     if(req.headers.get('origin')!==u.origin)fail(403,'Cross-origin write denied.');
     const fetchSite=req.headers.get('sec-fetch-site');if(fetchSite&& !['same-origin','none'].includes(fetchSite))fail(403,'Cross-site write denied.');
   }
-  const db=database(env);await seed(db);
+  const db=database(env);await seed(db);await seedThemePack(db,env);
+  const importedAudio=await themePackAudio(req,env,db,user);if(importedAudio)return importedAudio;
   if(p.startsWith('/api/admin/'))authorizeControl(p,user);
   const control=await controlRoutes(req,env,db,user,catalog);if(control)return control;
   await enforceOperations(req,db,user);
@@ -70,7 +75,7 @@ async function handle(req,env){
   if((p==='/api/admin/categories'||p==='/api/admin/languages')&&method==='POST'){
     const b=await body(req);id(b.id);if(typeof b.active!=='boolean')fail(400,'Active flag required.');
     let data,table;
-    if(p.endsWith('categories')){table='categories';data={id:b.id,nameId:text(b.nameId,60),nameEn:text(b.nameEn,60),descriptionId:text(b.descriptionId,160,false),descriptionEn:text(b.descriptionEn,160,false)};}
+    if(p.endsWith('categories'))return json(await saveCategory(db,b,user));
     else {table='languages';validateLanguage(b.id);data={id:b.id,label:text(b.label,60),code:LANGUAGES.find(l=>l.id===b.id).code};}
     await db.batch([db.statement(`INSERT INTO ${table}(id,data,active) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,active=excluded.active`,b.id,JSON.stringify(data),+b.active),log(db,user,table+'.save',b.id)]);
     return json({ok:true});
@@ -99,6 +104,11 @@ async function handle(req,env){
     const data={title:text(b.title,80),text:text(b.text??'',300,kind==='speech'),kind,source:text(b.source,120),rights:text(b.rights,400),ranked:b.ranked,
       url:audio.url,audioKey:audio.audioKey||null,audioHash:audio.audioHash,profile:audio.profile,duration:audio.duration};
     if(audio.ugcId)Object.assign(data,{ugcId:audio.ugcId,creatorName:audio.creatorName});
+    const imported=old&&parsed(old).importPack;
+    if(imported){
+      Object.assign(data,{importPack:imported,rightsReviewed:b.rightsReviewed===true,transcriptReviewed:b.transcriptReviewed===true});
+      if(b.active&&(!data.rightsReviewed||data.rights.includes('Public-use permission unconfirmed')||(kind==='speech'&&!data.transcriptReviewed)))fail(400,'Periksa izin, isi keterangan izin, dan koreksi transkrip sebelum publikasi / Confirm permission, describe it and review the transcript before publishing.');
+    }
     const revision=(old?.revision||0)+1;
     if(audio.ugcId){
       const result=await db.run("UPDATE sounds SET category_id=?,language=?,data=?,active=?,revision=? WHERE id=? AND revision=? AND EXISTS(SELECT 1 FROM community_submissions WHERE id=? AND status='approved')",b.categoryId,b.language,JSON.stringify(data),+b.active,revision,b.id,b.revision,audio.ugcId);
@@ -116,7 +126,7 @@ async function handle(req,env){
   if(p==='/api/matches'&&method==='POST'){
     requireUser(user);const b=await body(req),c=await catalog(db);if(!c.rules.rankedEnabled)fail(409,'Ranked is currently paused.');
     id(b.categoryId);text(b.language,40);id(b.peerId);if(!/^[A-Z2-9]{6}$/.test(b.code))fail(400,'Invalid room code.');
-    const eligible=c.sounds.filter(s=>s.categoryId===b.categoryId&&(b.language==='all'||s.language===b.language)&&s.ranked&&s.duration<=c.rules.recordSeconds);
+    const eligible=c.sounds.filter(s=>categoryScope(c.categories,b.categoryId).includes(s.categoryId)&&(b.language==='all'||s.language===b.language)&&s.ranked&&s.duration<=c.rules.recordSeconds);
     if(!eligible.length)fail(400,'No ranked sounds for this category and language.');
     const recent=await db.one('SELECT count(*) AS n FROM matches WHERE host_id=? AND created_at>?',user.id,Date.now()-3600000);if(recent.n>=20)fail(429,'Maximum 20 ranked rooms per hour.');
     const matchId=crypto.randomUUID(),now=Date.now(),data={categoryId:b.categoryId,language:b.language,rules:c.rules};
@@ -142,7 +152,7 @@ async function handle(req,env){
       if(m.status==='started')return json(await matchView(db,m));
       const c=await catalog(db);if(!c.rules.rankedEnabled)fail(409,'Ranked is paused.');
       if(c.rules.version!==m.rules.version)fail(409,'Rules updated. Create a new room for the new season.');
-      const eligible=c.sounds.filter(s=>s.categoryId===m.categoryId&&(m.language==='all'||s.language===m.language)&&s.ranked&&s.duration<=m.rules.recordSeconds);
+      const eligible=c.sounds.filter(s=>categoryScope(c.categories,m.categoryId).includes(s.categoryId)&&(m.language==='all'||s.language===m.language)&&s.ranked&&s.duration<=m.rules.recordSeconds);
       if(!eligible.length)fail(409,'No eligible sounds.');
       const queue=randomQueue(eligible.map(s=>s.id),m.rules.rounds),clips=eligible.filter(s=>queue.includes(s.id));
       const privateClips=[];for(const s of clips){const row=await db.one('SELECT * FROM sounds WHERE id=?',s.id);privateClips.push({...s,...parsed(row)});}

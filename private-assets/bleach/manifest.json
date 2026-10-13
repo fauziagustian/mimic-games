@@ -1,0 +1,8 @@
+{
+  "sounds": [
+    {"id":"bleach-shunsui-bankai","file":"shunsui-bankai.wav","original":"shunsui-bankai.mp3","title":"Shunsui · Bankai","text":"今回、家庭教国からの新児を俺に手をお勧め、姉の弾、二人と切りはさみ地図目の登場へ"},
+    {"id":"bleach-ichigo-bankai","file":"ichigo-bankai.wav","original":"ichigo-bankai_91wUa6g.mp3","title":"Ichigo · Bankai","text":"バルッ! カイッ!"},
+    {"id":"bleach-shinji-bankai","file":"shinji-bankai.wav","original":"bankai-shinji.mp3","title":"Shinji · Bankai","text":"あんかい 探し前を越し前発防を防ねり"},
+    {"id":"bleach-byakuya-bankai","file":"byakuya-bankai.wav","original":"bankai-byakuya.mp3","title":"Byakuya · Bankai","text":"万回、千分ぞくら、かによし"}
+  ]
+}

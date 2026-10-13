@@ -92,8 +92,8 @@ test('Control center: RBAC, site versions, operation gates, selected sounds, roo
       assert.equal((await call('/api/admin/activity?q=room.close',{who:'operator'})).value.items.length,1);
     });
     await t.test('dashboard/export/audit are bounded and exclude secrets, recordings and staff lists',async()=>{
-      const d=(await call('/api/admin/overview',{who:'operator'})).value;assert.equal(d.sounds.total,6);assert.ok(d.roomsLast24h>=2);assert.equal(d.season,1);
-      const exported=(await call('/api/admin/export',{who:'operator'})).value;assert.equal(exported.format,'mimic-config-v1');assert.equal(exported.catalog.sounds.length,6);
+      const d=(await call('/api/admin/overview',{who:'operator'})).value;assert.equal(d.sounds.total,10);assert.equal(d.sounds.active,6);assert.ok(d.roomsLast24h>=2);assert.equal(d.season,1);
+      const exported=(await call('/api/admin/export',{who:'operator'})).value;assert.equal(exported.format,'mimic-config-v1');assert.equal(exported.catalog.sounds.length,10);
       for(const secret of [host.token,guest.token,'admin@preview.test','operator@preview.test','audioHash','audioKey','ADMIN_EMAILS'])assert.equal(JSON.stringify(exported).includes(secret),false,secret);
       assert.equal((await call('/api/admin/activity?page=-1',{who:'admin'})).status,400);assert.equal((await call('/api/admin/rooms?page=999999',{who:'admin'})).status,400);
       assert.ok((await call('/api/admin/activity',{who:'admin'})).value.items.some(r=>r.action==='staff.revoke'));

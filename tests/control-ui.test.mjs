@@ -29,7 +29,7 @@ test('sound picker: explicit pool, shared eligibility filters, maintenance UI an
   const doc=environment(),buttons=['a','b'].map(id=>{const button=new Element();button.dataset.play=id;button.card=new Element();return button;});
   doc.querySelectorAll=selector=>selector==='[data-play]'?buttons:buttons.flatMap(b=>b.card.children).filter(x=>!x.removed);
   let setup={categoryId:'drama',language:'all',mode:'casual'};const settings={...DEFAULT_SITE},account={user:null};
-  const catalog={rules:{recordSeconds:15,rankedEnabled:true},sounds:[{id:'a',categoryId:'drama',language:'indonesian',ranked:true,duration:2},{id:'b',categoryId:'drama',language:'english',ranked:true,duration:2}]};
+  const catalog={categories:[{id:'drama',active:true}],rules:{recordSeconds:15,rankedEnabled:true},sounds:[{id:'a',categoryId:'drama',language:'indonesian',ranked:true,duration:2},{id:'b',categoryId:'drama',language:'english',ranked:true,duration:2}]};
   let picker;picker=soundPicker({catalog,settings,account,getSetup:()=>setup,onChange:()=>picker.render()});picker.render();assert.equal(doc.querySelector('#create').disabled,false);assert.deepEqual(picker.payload(),{});
   doc.querySelector('#sound-picker-controls').querySelector('select').onchange({target:{value:'manual'}});assert.deepEqual(picker.payload(),{soundIds:[]});assert.equal(doc.querySelector('#create').disabled,true);
   buttons[0].card.children.at(-1).querySelector('input').onchange({target:{checked:true}});assert.deepEqual(picker.payload(),{soundIds:['a']});assert.equal(doc.querySelector('#create').disabled,false);

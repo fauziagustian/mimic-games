@@ -1,3 +1,4 @@
+import {categoryTrail} from './categories.js';
 export const uiLanguage=()=>localStorage.getItem('mimic-ui')==='en'?'en':'id';
 export const t=(id,en)=>uiLanguage()==='en'?en:id;
 export const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -10,6 +11,7 @@ export async function api(path,options={}){
 }
 export function signInLink(returnTo=location.pathname+location.search){return '/signin-with-chatgpt?return_to='+encodeURIComponent(returnTo);}
 export const categoryName=c=>uiLanguage()==='en'?c?.nameEn:c?.nameId;
+export const categoryPath=(categories,id)=>categoryTrail(categories,id).map(categoryName).join(' › ')||id;
 export function mountNavigation(){
   const style=document.createElement('link');style.rel='stylesheet';style.href='/control.css';document.head.append(style);
   const nav=document.createElement('nav');nav.className='site-nav';nav.setAttribute('aria-label','Game navigation');

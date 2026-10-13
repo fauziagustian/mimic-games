@@ -5,6 +5,7 @@ import {readFile} from 'node:fs/promises';
 import * as routing from '../public/game-routing.js';
 import * as pages from '../public/game-pages.js';
 import * as matchRules from '../public/match-rules.js';
+import {categoryScope} from '../public/categories.js';
 import * as turns from '../public/turns.js';
 import {DEFAULT_SITE} from '../public/site-config.js';
 import {DEFAULT_RULES,CATEGORIES,LANGUAGES,SEED_SOUNDS} from '../public/catalog.js';
@@ -52,12 +53,12 @@ test('navigation controller: character → create → lobby → room, invitation
   globalThis.localStorage=storage();localStorage.setItem('mimic-name','Tester');
   const ss=storage(),nodes=new Map(),location=new URL('https://mimic.test/choose-character?next=create');
   const element=()=>({innerHTML:'',textContent:'',value:'',dataset:{},isConnected:true,setAttribute(){},focus(){},classList:{add(){},remove(){}}});
-  for(const id of ['app','toast','networkStatus','characterForm','characterStage','nickname','saveName','continueCharacter','nameStatus','nameCount','matchType','capacity','category','language','profile','selectionInfo','soundCount','soundCards','create','practice','ready','start','copy','leave','joinForm','code','roomStage'])nodes.set('#'+id,element());
+  for(const id of ['app','toast','networkStatus','characterForm','characterStage','nickname','saveName','continueCharacter','nameStatus','nameCount','matchType','capacity','category','subcategory','language','profile','selectionInfo','soundCount','soundCards','create','practice','ready','start','copy','leave','joinForm','code','roomStage'])nodes.set('#'+id,element());
   nodes.get('#matchType').value='custom';nodes.get('#capacity').value='2';nodes.get('#nickname').value='Tester';nodes.get('#category').value='drama';nodes.get('#language').value='all';nodes.get('#profile').value='party';
   const app=nodes.get('#app'),joinButton=element(),avatarStates=[],calls=[];let rejectName=false;
   let mockRoom={code:'ABCDEF',phase:'lobby',revision:1,me:'a',host:true,categoryId:'drama',profile:'party',mode:'casual',rules:DEFAULT_RULES,players:[{id:'a',name:'Tester',total:0,ready:true,avatarId:'male-a'}],clips:[SEED_SOUNDS[0]],submitted:[],results:[],queue:[],round:0};
   const context=vm.createContext({
-    ...routing,...pages,...turns,...matchRules,t,esc,categoryName,uiLanguage,URL,URLSearchParams,Date,
+    ...routing,...pages,...turns,...matchRules,categoryScope,t,esc,categoryName,uiLanguage,URL,URLSearchParams,Date,
     localStorage,sessionStorage:ss,location,history:{pushState(a,b,url){location.href=new URL(url,location).href;},replaceState(a,b,url){location.href=new URL(url,location).href;}},
     document:{querySelector:s=>s==='#joinForm button'?joinButton:nodes.get(s)||null,querySelectorAll:()=>[]},window:{scrollTo(){}},
     avatarStage:()=>({detach(){},sync(state){avatarStates.push(state);},mount(target,state){avatarStates.push(state);}}),avatarImage:()=>'',preferredAvatar:()=> 'male-a',

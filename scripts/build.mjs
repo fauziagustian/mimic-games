@@ -7,6 +7,13 @@ const references={};
 for(const sound of SEED_SOUNDS){const bytes=await readFile('public'+sound.url),samples=pcmFromWav(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length));references[sound.id]={profile:analyzeAudio(samples),audioHash:await digest(samples.buffer),duration:samples.length/16000};}
 await mkdir('work',{recursive:true});
 await writeFile('work/reference-seeds.json',JSON.stringify(references));
+const bleach=JSON.parse(await readFile('private-assets/bleach/manifest.json','utf8'));
+const imported=[];
+for(const sound of bleach.sounds){
+ const bytes=await readFile('private-assets/bleach/'+sound.file),samples=pcmFromWav(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length));
+ imported.push({id:sound.id,title:sound.title,text:sound.text,kind:'speech',categoryId:'bleach',language:'japanese',importPack:'bleach-v1',rightsReviewed:false,transcriptReviewed:false,source:'User-provided Bleach clip · '+sound.original,rights:'Menunggu konfirmasi izin penggunaan publik / Public-use permission unconfirmed',ranked:false,url:`/api/library-sounds/${sound.id}/audio`,audioKey:`imports/bleach-v1/${sound.id}.wav`,profile:analyzeAudio(samples),audioHash:await digest(samples.buffer),duration:samples.length/16000,bytes:bytes.toString('base64')});
+}
+await writeFile('work/bleach-pack.json',JSON.stringify({sounds:imported}));
 const files={};
 // Rebuild only the generated client directory. Never embed stale generated assets.
 await rm('dist/client',{recursive:true,force:true});

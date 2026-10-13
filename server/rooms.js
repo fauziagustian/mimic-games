@@ -1,5 +1,6 @@
 import {fail,text,id,integer,limitedBody,pcmFromWav,digest} from './validation.js';
 import {randomQueue} from '../public/catalog.js';
+import {categoryScope,categoryTrail} from '../public/categories.js';
 import {analyzeAudio} from '../public/scoring.js';
 import {scoreSound,SCORING_VERSION} from '../public/scoring-detail.js';
 import {DEFAULT_AVATAR,isAvatar} from '../public/avatars.js';
@@ -171,7 +172,8 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     const ip=await hashToken(req.headers.get('cf-connecting-ip')||'local'),bucket=`${matchType==='solo'?'solo':'room'}-limit:${ip}:${Math.floor(Date.now()/3600000)}`;
     await db.run("INSERT INTO config(id,value) VALUES(?,'1') ON CONFLICT(id) DO UPDATE SET value=CAST(value AS INTEGER)+1",bucket);
     if(Number((await db.one('SELECT value FROM config WHERE id=?',bucket)).value)>(matchType==='solo'?240:30))fail(429,'Terlalu banyak permintaan match. Coba lagi nanti / Too many match requests. Try again later.');
-    let sounds=catalog.sounds.filter(s=>s.categoryId===b.categoryId&&(b.language==='all'||s.language===b.language)&&(mode!=='ranked'||s.ranked)&&s.duration<=catalog.rules.recordSeconds&&s.quality?.usable!==false);
+    const categoryIds=new Set(categoryScope(catalog.categories,b.categoryId));
+    let sounds=catalog.sounds.filter(s=>categoryIds.has(s.categoryId)&&(b.language==='all'||s.language===b.language)&&(mode!=='ranked'||s.ranked)&&s.duration<=catalog.rules.recordSeconds&&s.quality?.usable!==false);
     if(b.soundIds!==undefined){
       if(matchType==='solo')fail(400,'Solo menggunakan sound acak sesuai kategori / Solo uses a random category pool.');
       if(mode==='ranked')fail(400,'Kompetitif selalu acak / Ranked always uses random selection.');
@@ -182,7 +184,8 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     if(!sounds.length)fail(400,'No sounds match this selection / Pilihan ini belum memiliki sound.');
     const token=newToken(),uid=user?.id||'guest-'+crypto.randomUUID(),matchId=crypto.randomUUID(),code=roomCode(),name=validName(b.name),rules={...catalog.rules,asrModel:catalog.rules.asrModel||'tiny',scoringVersion:SCORING_VERSION,profile,maxPlayers:capacity};
     const clips=[];for(const sound of sounds){const row=await db.one('SELECT data FROM sounds WHERE id=?',sound.id);clips.push({...JSON.parse(row.data),...sound});}
-    const state={hostId:uid,phase:'lobby',players:[{id:uid,name,total:0,ready:false,avatarId:avatar(b.avatarId),lastSeenAt:Date.now()}],mode,profile,categoryId:b.categoryId,language:b.language,matchType,capacity,practice:false,rules,clips,queue:[],round:0};
+    const trail=categoryTrail(catalog.categories,b.categoryId),theme={nameId:trail.map(c=>c.nameId).join(' › '),nameEn:trail.map(c=>c.nameEn).join(' › ')};
+    const state={hostId:uid,phase:'lobby',players:[{id:uid,name,total:0,ready:false,avatarId:avatar(b.avatarId),lastSeenAt:Date.now()}],mode,profile,categoryId:b.categoryId,theme,language:b.language,matchType,capacity,practice:false,rules,clips,queue:[],round:0};
     if(matchType==='solo')return json({code:await joinSolo(db,state,uid,await hashToken(token)),token});
     const expires=Date.now()+7200000;
     await db.batch([
