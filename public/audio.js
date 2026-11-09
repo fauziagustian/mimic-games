@@ -97,7 +97,7 @@ export async function unpack(encoded) {
   const data = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
   return decodeAudio(data.buffer);
 }
-export async function playSamples(samples) {
+export async function playSamples(samples, {onProgress} = {}) {
   stopAudio();
   await unlockAudio();
   const ctx = audioContext(),
@@ -108,12 +108,20 @@ export async function playSamples(samples) {
   source.connect(ctx.destination);
   playing = source;
   return new Promise((resolve) => {
-    source.complete = resolve;
+    let progressTimer;
+    const duration = samples.length / SAMPLE_RATE, started = ctx.currentTime;
+    const progress = elapsed => {try {onProgress?.(elapsed, duration);} catch { /* Optional visualization must not interrupt audio. */ }};
+    source.complete = completed => {
+      clearInterval(progressTimer);
+      if (completed) progress(duration);
+      resolve(completed);
+    };
     source.onended = () => {
       if (playing === source) playing = null;
-      resolve(true);
+      source.complete(true);
     };
     source.start();
+    if (onProgress) {progress(0); progressTimer = setInterval(() => progress(Math.min(duration, ctx.currentTime - started)), 80);}
   });
 }
 export function drawWave(canvas, samples, color = "#141515") {
@@ -138,7 +146,7 @@ export function drawWave(canvas, samples, color = "#141515") {
     c.fillRect(i * 6, (h - amp) / 2, 3, amp);
   }
 }
-export async function recordAudio({ seconds = 15, onLevel = () => {}, stream:armedStream } = {}) {
+export async function recordAudio({ seconds = 15, onLevel = () => {}, onPitch, stream:armedStream } = {}) {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
     throw new Error(
       "Browser ini belum mendukung rekaman. Gunakan Chrome, Edge, atau Safari terbaru melalui HTTPS.",
@@ -161,10 +169,12 @@ export async function recordAudio({ seconds = 15, onLevel = () => {}, stream:arm
   const ctx = audioContext(),
     source = ctx.createMediaStreamSource(stream),
     analyser = ctx.createAnalyser();
-  analyser.fftSize = 1024;
+  // Pitch needs a full 64ms window, including at 44.1/48/96 kHz device rates.
+  // Keep the established lightweight meter size when no pitch guide is attached.
+  analyser.fftSize = onPitch ? Math.min(32768, 2 ** Math.ceil(Math.log2(ctx.sampleRate * .064))) : 1024;
   source.connect(analyser);
-  const frame = new Float32Array(1024),
-    started = performance.now();
+  const frame = new Float32Array(analyser.fftSize);
+  let started;
   const release = () => {
     clearTimeout(timer);
     clearInterval(interval);
@@ -198,10 +208,13 @@ export async function recordAudio({ seconds = 15, onLevel = () => {}, stream:arm
       }
     };
   });
-  recorder.start();
+  try {recorder.start();} catch (error) {release(); throw error;}
+  started = performance.now();
   interval = setInterval(() => {
     analyser.getFloatTimeDomainData(frame);
-    onLevel(frame, (performance.now() - started) / 1000);
+    const elapsed = (performance.now() - started) / 1000;
+    onLevel(frame, elapsed);
+    try {onPitch?.(frame, elapsed, ctx.sampleRate);} catch { /* A chart failure must not discard a take. */ }
   }, 90);
   const stop = () => {
     if (!closed) {

@@ -1,11 +1,14 @@
 import {fail,text,integer,limitedBody,HttpError} from './validation.js';
 import {DEFAULT_SITE,SITE_TEXT_LIMITS,SITE_FLAGS,ACCENTS} from '../public/site-config.js';
+import {netlifySession} from './netlify-auth.js';
 
 const json=value=>Response.json(value,{headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const key='site:settings';
 export const owners=env=>(env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean);
 export async function identity(req,env,db){
-  const userId=req.headers.get('oai-authenticated-user-id'),email=req.headers.get('oai-authenticated-user-email');if(!userId||!email)return null;
+  const userId=req.headers.get('oai-authenticated-user-id'),email=req.headers.get('oai-authenticated-user-email');
+  if((!userId||!email)&&env.NETLIFY_AUTH)return netlifySession(req,db);
+  if(!userId||!email)return null;
   let role=owners(env).includes(email.toLowerCase())?'owner':'player';
   if(role==='player'){const row=await db.one('SELECT value FROM config WHERE id=?','staff:'+email.toLowerCase());if(row){const staff=JSON.parse(row.value);if(staff.active&&['admin','moderator'].includes(staff.role))role=staff.role;}}
   return {id:userId,email,role,admin:role!=='player'};
@@ -73,11 +76,13 @@ export async function controlRoutes(req,env,db,user,getCatalog){
     if(!results[0].meta.changes)fail(409,'Room changed. Refresh.');return json({ok:true});
   }
   if(p==='/api/admin/staff'&&method==='GET'){
-    const rows=await db.all("SELECT value FROM config WHERE id LIKE 'staff:%' ORDER BY id LIMIT 100");return json({owners:owners(env),items:rows.map(r=>JSON.parse(r.value))});
+    const [rows,netlifyOwner]=await Promise.all([db.all("SELECT value FROM config WHERE id LIKE 'staff:%' ORDER BY id LIMIT 100"),db.one("SELECT value FROM config WHERE id='netlify:owner'")]);
+    const protectedOwners=[...new Set([...owners(env),...(netlifyOwner?[JSON.parse(netlifyOwner.value).email]:[])])];return json({owners:protectedOwners,items:rows.map(r=>JSON.parse(r.value))});
   }
   if(p==='/api/admin/staff'&&method==='POST'){
     const b=await body(req),email=text(b.email,254).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))fail(400,'Invalid email.');
-    if(owners(env).includes(email))fail(403,'Akun owner dilindungi konfigurasi server / Bootstrap owner accounts are protected.');
+    const netlifyOwner=env.NETLIFY_AUTH?await db.one("SELECT value FROM config WHERE id='netlify:owner'"):null;
+    if(owners(env).includes(email)||netlifyOwner&&JSON.parse(netlifyOwner.value).email===email)fail(403,'Akun owner dilindungi konfigurasi server / Bootstrap owner accounts are protected.');
     if(!['admin','moderator'].includes(b.role)||typeof b.active!=='boolean')fail(400,'Invalid role.');
     const k='staff:'+email,old=await db.one('SELECT value FROM config WHERE id=?',k),prior=old?JSON.parse(old.value):{revision:0};if((b.revision??0)!==prior.revision)fail(409,'Staff changed. Reload.');
     if(!old&&(await db.one("SELECT count(*) AS n FROM config WHERE id LIKE 'staff:%'")).n>=100)fail(409,'Maximum 100 staff accounts.');

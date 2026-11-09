@@ -1,0 +1,47 @@
+[build]
+  command = "npm run build:netlify"
+  publish = "dist/client"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/choose-character"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/create-match"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/matching"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/room/*"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/admin"
+  to = "/admin.html"
+  status = 200
+
+[[redirects]]
+  from = "/community"
+  to = "/community.html"
+  status = 200
+
+[[redirects]]
+  from = "/leaderboard"
+  to = "/leaderboard.html"
+  status = 200
+
+[[redirects]]
+  from = "/login"
+  to = "/login.html"
+  status = 200

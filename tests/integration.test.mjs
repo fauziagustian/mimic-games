@@ -13,7 +13,7 @@ test('Worker: auth, catalog, rooms, one take, ranked review, leaderboard, snapsh
  try{
  assert.equal((await call('/')).status,200);assert.equal((await call('/admin')).status,200);
  assert.equal((await call('/api/admin/catalog')).status,401);assert.equal((await call('/api/admin/catalog',{who:'p1'})).status,403);
- const cat=(await call('/api/catalog')).value;assert.equal(cat.sounds.length,6);assert.equal(cat.languages.length,14);assert.equal('profile' in cat.sounds[0],false);
+ const cat=(await call('/api/catalog')).value;assert.equal(cat.sounds.length,23);assert.equal(cat.languages.length,14);assert.equal('profile' in cat.sounds[0],false);
  const csrf=await call('/api/admin/categories',{who:'admin',method:'POST',data:{},headers:{Origin:'https://evil.test'}});assert.equal(csrf.status,403);
  assert.equal((await call('/api/admin/rules',{who:'admin',method:'POST',data:{version:1,rules:{...DEFAULT_RULES,weights:{pitch:50,words:50,timbre:50,rhythm:50}}}})).status,400);
  assert.equal((await call('/api/admin/rules',{who:'admin',method:'POST',data:{version:1,rules:{...DEFAULT_RULES,rounds:1}}})).status,200);
@@ -58,7 +58,7 @@ test('Worker: auth, catalog, rooms, one take, ranked review, leaderboard, snapsh
  assert.equal((await call('/api/admin/rules',{who:'admin',method:'POST',data:{version:2,rules:{...DEFAULT_RULES,rounds:2}}})).status,200);assert.equal((await call('/api/leaderboard')).value.rows.length,0);assert.equal((await call('/api/leaderboard?version=2')).value.rows.length,1);
  assert.equal((await call(`/api/rooms/${code}`,{token:host.token})).value.rules.version,2);
  const uploaded=await call('/api/admin/upload',{who:'admin',method:'POST',raw:fixture});assert.equal(uploaded.status,200);
- const sound=await call('/api/admin/sounds',{who:'admin',method:'POST',data:{id:'qa-sound',categoryId:'drama',language:'english',title:'QA sound',text:'Test phrase',source:'QA',rights:'Original',active:true,ranked:true,uploadId:uploaded.value.id}});assert.equal(sound.status,200);assert.equal((await call('/api/catalog')).value.sounds.length,7);
+ const sound=await call('/api/admin/sounds',{who:'admin',method:'POST',data:{id:'qa-sound',categoryId:'drama',language:'english',title:'QA sound',text:'Test phrase',source:'QA',rights:'Original',active:true,ranked:true,uploadId:uploaded.value.id}});assert.equal(sound.status,200);assert.equal((await call('/api/catalog')).value.sounds.length,24);
  assert.equal((await call('/api/admin/upload',{who:'admin',method:'POST',raw:new TextEncoder().encode('bad wav')})).status,400);
  console.log('Verified 2-client sequential turns and shared clock, immutable rules, duplicate prevention, moderation, seasons, D1 and R2.');
  }finally{await mf.dispose();}

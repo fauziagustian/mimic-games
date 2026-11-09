@@ -1,13 +1,29 @@
 {
-  "name": "mimic-sound-battle",
+  "name": "mimic-sound-battle-netlify",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "dev": "node scripts/preview.mjs",
+    "build": "npm run build:netlify",
+    "build:netlify": "node scripts/netlify-build.mjs",
+    "build:worker": "node scripts/build.mjs",
+    "dev": "npm run build && node scripts/netlify-preview.mjs",
+    "dev:bleach": "npm run dev",
+    "dev:worker": "npm run build:worker && node scripts/preview.mjs",
     "db:generate": "drizzle-kit generate",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "test:netlify": "node --test tests/netlify-game.test.mjs"
   },
-  "dependencies": {"drizzle-orm": "0.45.2", "three": "0.186.1"},
-  "devDependencies": {"drizzle-kit": "0.31.10", "esbuild": "0.25.12", "wrangler": "4.92.0", "miniflare": "4.20260515.0"}
+  "dependencies": {
+    "@netlify/blobs": "^11.1.6",
+    "drizzle-orm": "0.45.2",
+    "sql.js": "^1.15.1",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.10",
+    "esbuild": "0.25.12",
+    "miniflare": "4.20260515.0",
+    "wrangler": "4.92.0"
+  }
 }

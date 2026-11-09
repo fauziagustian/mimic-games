@@ -7,11 +7,11 @@ import {scoringLab} from './scoring-lab.js';
 import {categoryScope,categoryEnabled,orderedCategories} from '../public/categories.js';
 import {saveCategory} from './categories.js';
 import {seedThemePack,themePackAudio} from './theme-pack.js';
-import references from '../work/reference-seeds.json';
+import references from './generated/reference-seeds.js';
 import {roomRoutes} from './rooms.js';
 import {communityRoutes} from './community.js';
-import staticAssets from '../work/static-assets.json';
 import {identity,authorizeControl,controlRoutes,enforceOperations} from './control.js';
+import {netlifyAuthRoutes} from './netlify-auth.js';
 
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const parsed=row=>row?JSON.parse(row.data):null;
@@ -41,20 +41,15 @@ async function match(db,matchId){const row=await db.one('SELECT * FROM matches W
 async function member(db,m,user){requireUser(user);const row=await db.one('SELECT * FROM members WHERE match_id=? AND user_id=?',m.id,user.id);if(!row)fail(403,'You are not in this match.');return row;}
 async function matchView(db,m){return {id:m.id,code:m.code,status:m.status,categoryId:m.categoryId,language:m.language,rules:m.rules,queue:m.queue||[],clips:m.clips||[],expiresAt:m.expires_at,members:await db.all('SELECT peer_id AS peerId,name FROM members WHERE match_id=?',m.id)};}
 async function handle(req,env){
-  const u=new URL(req.url),p=u.pathname,method=req.method,user=p.startsWith('/api/')?await identity(req,env,database(env)):null;
-  if(p==='/api/me')return json({user:user?{id:user.id,admin:user.admin,role:user.role}:null,adminConfigured:!!env.ADMIN_EMAILS});
-  if(!p.startsWith('/api/')){
-    if(!['GET','HEAD'].includes(method))return new Response('Method not allowed',{status:405});
-    const gamePage=['/','/choose-character','/create-match','/matching'].includes(p)||/^\/room\/[A-Z2-9]{6}$/.test(p);
-    const asset=staticAssets[gamePage?'/index.html':['/admin','/leaderboard','/community'].includes(p)?p+'.html':p];
-    if(!asset)return new Response('Not found',{status:404});
-    return new Response(method==='HEAD'?null:Uint8Array.from(atob(asset.data),c=>c.charCodeAt(0)),{headers:{'Content-Type':asset.mime,'Cache-Control':p.endsWith('.wav')?'public, max-age=3600':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'}});
-  }
+  const u=new URL(req.url),p=u.pathname,method=req.method,db=database(env),user=p.startsWith('/api/')?await identity(req,env,db):null;
+  if(p==='/api/me')return json({user:user?{id:user.id,admin:user.admin,role:user.role}:null,adminConfigured:!!env.ADMIN_EMAILS||!!await db.one("SELECT id FROM config WHERE id='netlify:owner'")});
+  if(!p.startsWith('/api/'))return env.ASSETS?.fetch(req)??new Response('Not found',{status:404});
   if(!['GET','HEAD'].includes(method)){
     if(req.headers.get('origin')!==u.origin)fail(403,'Cross-origin write denied.');
     const fetchSite=req.headers.get('sec-fetch-site');if(fetchSite&& !['same-origin','none'].includes(fetchSite))fail(403,'Cross-site write denied.');
   }
-  const db=database(env);await seed(db);await seedThemePack(db,env);
+  if(env.NETLIFY_AUTH){const auth=await netlifyAuthRoutes(req,db);if(auth)return auth;}
+  await seed(db);await seedThemePack(db,env);
   const importedAudio=await themePackAudio(req,env,db,user);if(importedAudio)return importedAudio;
   if(p.startsWith('/api/admin/'))authorizeControl(p,user);
   const control=await controlRoutes(req,env,db,user,catalog);if(control)return control;
@@ -107,7 +102,7 @@ async function handle(req,env){
     const imported=old&&parsed(old).importPack;
     if(imported){
       Object.assign(data,{importPack:imported,rightsReviewed:b.rightsReviewed===true,transcriptReviewed:b.transcriptReviewed===true});
-      if(b.active&&(!data.rightsReviewed||data.rights.includes('Public-use permission unconfirmed')||(kind==='speech'&&!data.transcriptReviewed)))fail(400,'Periksa izin, isi keterangan izin, dan koreksi transkrip sebelum publikasi / Confirm permission, describe it and review the transcript before publishing.');
+      if(b.active&&(!data.rightsReviewed||data.rights.includes('Public-use permission unconfirmed')||(b.ranked&&kind==='speech'&&!data.transcriptReviewed)))fail(400,'Konfirmasi izin sebelum publikasi; periksa transkrip sebelum memberi akses kompetitif / Confirm permission before publishing and review speech transcripts before ranked eligibility.');
     }
     const revision=(old?.revision||0)+1;
     if(audio.ugcId){

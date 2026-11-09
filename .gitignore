@@ -1,8 +1,12 @@
 work/
+server/generated/
 outputs/
 node_modules/
 .DS_Store
 .sites-runtime/
+.netlify/
+netlify/functions/*.zip
+netlify/functions/manifest.json
 dist/
 .wrangler/
 .dev.vars*

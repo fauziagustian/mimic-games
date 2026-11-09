@@ -1,5 +1,5 @@
 import {fail,text,id,integer,limitedBody,pcmFromWav,digest} from './validation.js';
-import {randomQueue} from '../public/catalog.js';
+import {randomQueue,soundEligibleForProfile} from '../public/catalog.js';
 import {categoryScope,categoryTrail} from '../public/categories.js';
 import {analyzeAudio} from '../public/scoring.js';
 import {scoreSound,SCORING_VERSION} from '../public/scoring-detail.js';
@@ -173,7 +173,7 @@ export async function roomRoutes(req,env,db,user,getCatalog){
     await db.run("INSERT INTO config(id,value) VALUES(?,'1') ON CONFLICT(id) DO UPDATE SET value=CAST(value AS INTEGER)+1",bucket);
     if(Number((await db.one('SELECT value FROM config WHERE id=?',bucket)).value)>(matchType==='solo'?240:30))fail(429,'Terlalu banyak permintaan match. Coba lagi nanti / Too many match requests. Try again later.');
     const categoryIds=new Set(categoryScope(catalog.categories,b.categoryId));
-    let sounds=catalog.sounds.filter(s=>categoryIds.has(s.categoryId)&&(b.language==='all'||s.language===b.language)&&(mode!=='ranked'||s.ranked)&&s.duration<=catalog.rules.recordSeconds&&s.quality?.usable!==false);
+    let sounds=catalog.sounds.filter(s=>categoryIds.has(s.categoryId)&&(b.language==='all'||s.language===b.language)&&(mode!=='ranked'||s.ranked)&&soundEligibleForProfile(s,profile)&&s.duration<=catalog.rules.recordSeconds&&s.quality?.usable!==false);
     if(b.soundIds!==undefined){
       if(matchType==='solo')fail(400,'Solo menggunakan sound acak sesuai kategori / Solo uses a random category pool.');
       if(mode==='ranked')fail(400,'Kompetitif selalu acak / Ranked always uses random selection.');

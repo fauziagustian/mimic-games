@@ -57,6 +57,14 @@ Hanya frame voiced disejajarkan. Untuk Precision, `o=1`. Untuk Party, `o = media
 
 `12 × log2(rasio frekuensi)` mengubah selisih frekuensi menjadi semitone. Pada contoh frame seragam/alignment identik: selisih 0 semitone → 100, 1 → 90, 5 → 50, ≥10 → 0. Suara nyata tidak selalu mengikuti contoh sederhana ini karena estimasi pitch, voicing, dan jalur DTW. Party menilai kontur relatif; Precision juga menuntut tinggi nada absolut. Suara sangat tinggi/rendah, teriakan atau frame tak periodik dapat tidak terdeteksi oleh algoritme ini.
 
+### Visual gelombang sederhana pada latihan lokal (14 Oktober 2026)
+
+Sesuai permintaan desain fun game, panel frekuensi sebelumnya diganti waveform: batang simetris abu-abu **Contoh**, biru **Kamu**, dan penunjuk waktu. Tidak ada angka frekuensi, semitone, sumbu numerik, median atau persentase deteksi di panel. Nama file/API `public/pitch-guide.js` dipertahankan untuk kompatibilitas, tetapi visual sekarang adalah **envelope amplitudo, bukan kurva pitch**.
+
+Envelope memakai RMS setelah pengurangan DC per blok 12 ms; nilai di bawah 0,003 tampil datar. Tinggi visual `min(1, 3 × RMS)` dengan skala yang sama untuk kedua suara. Beberapa titik yang masuk kolom gambar sama memakai maksimum tinggi. Input live mengikuti sample rate AudioContext dan waktu rekam; hanya jendela baru ditambahkan. Referensi tidak disalin ke warna biru. Hasil akhir dihitung ulang dari PCM take yang selesai didekode. Tidak ada normalisasi waktu, DTW atau koreksi latensi perangkat pada gambar, sehingga pratinjau live dapat sedikit berbeda dari waveform hasil akhir.
+
+Visual ini membantu mengikuti alur suara, bukan bukti kemiripan pitch/identitas atau ukuran skor. **Rumus penilaian tidak berubah**: engine tetap menghitung pitch, ritme dan komponen aktif lainnya sesuai profil. Skor total/reaksi tampil langsung; rincian teknis tersedia melalui **Rincian skor** yang tertutup secara default. Perubahan tampilan ini baru dipasang di latihan lokal, belum di arena multiplayer publik.
+
 ## 5. Notasi musik
 
 **Belum ada komponen notasi terpisah.** Game belum mengekstrak do–re–mi, nama not C/D/E, nomor MIDI, onset/durasi setiap not, atau transkripsi partitur. Selisih semitone pada komponen P tidak sama dengan sistem penilaian notasi. Karena belum diimplementasikan, tidak ada angka akurasi notasi yang sah; bukan berarti akurasinya 0%.

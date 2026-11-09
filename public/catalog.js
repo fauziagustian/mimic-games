@@ -26,6 +26,7 @@ export const SEED_SOUNDS = [
   ['take-it-easy','Take it easy.','Take it easy, boss. We have not even started!','chill','english'],
   ['lets-go','Let’s go!','Are you serious? That is absolutely amazing!','hype','english'],
 ].map(([id,title,text,categoryId,language])=>({id,title,text,categoryId,language,url:`/audio/${id}.wav`,source:'MIMIC original · synthetic',rights:'Original synthetic practice audio',active:true,ranked:true,revision:1}));
+export const soundEligibleForProfile=(sound,profile)=>profile!=='precision'||sound.kind==='sound'||sound.transcriptReviewed!==false;
 export function randomQueue(ids, rounds, random=()=>crypto.getRandomValues(new Uint32Array(1))[0]/4294967296) {
   if(!ids.length) throw new Error('No sounds match this selection.');
   const queue=[];

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f3e9">
+  <title>MIMIC — Bleach Local Lab</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/_preview/bleach/game.css">
+  <link rel="stylesheet" href="/pitch-guide.css">
+  <link rel="stylesheet" href="/match-standings.css">
+  <script type="module" src="/_preview/bleach/game.js"></script>
+</head>
+<body>
+  <header><a class="brand" href="/">MIMIC<span>SOUND BATTLE</span></a><span class="badge">LOCAL LAB · 1 PEMAIN</span></header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">ANIME / BLEACH / 日本語</p><h1>Bankai battle<span>.</span></h1><p>Dengarkan. Tirukan. Temukan suara panggungmu.</p></div><a class="text-link" href="/create-match">Buka multiplayer lokal ↗</a></section>
+    <div class="layout">
+      <section class="stage-column" aria-label="Panggung latihan">
+        <div id="stage"></div>
+        <form id="nameForm" class="name-form"><label for="playerName">Nama panggung <span>maks. 10 karakter</span></label><div><input id="playerName" name="playerName" maxlength="10" value="Player" autocomplete="nickname" required><button id="saveName" type="submit">Simpan nama</button></div><p id="nameStatus" role="status">Nama tersimpan: Player</p></form>
+      </section>
+      <section class="game-panel" aria-labelledby="roundTitle">
+        <div class="panel-top"><span class="badge dark">PARTY MODE</span><span id="roundCount">4 sample tersedia</span></div>
+        <label for="soundChoice">Pilih latihan</label><select id="soundChoice" disabled><option>Memuat sample…</option></select>
+        <h2 id="roundTitle">Panggung milikmu.</h2>
+        <p id="instruction">Gunakan headphone agar contoh suara tidak ikut terekam.</p>
+        <div id="cue" class="cue" role="status" aria-live="polite">Siap?</div>
+        <div id="pitchGuide"></div>
+        <div id="captureView" hidden><progress id="recordProgress" max="1" value="0" aria-label="Waktu rekaman"></progress><p id="recordTime"></p></div>
+        <div id="result" hidden aria-live="polite"></div>
+        <p id="error" class="error" role="alert" hidden></p>
+        <div class="actions"><button id="start" class="primary" disabled>Mulai latihan →</button><button id="cancel" hidden>Batalkan giliran</button></div>
+        <div id="replays" class="actions secondary" hidden><button id="hearReference">Dengar contoh</button><button id="hearAttempt">Dengar mimic saya</button><button id="retry">Ulangi sound</button></div>
+        <button id="reset" class="text-button" hidden>Mulai sesi baru</button>
+        <p class="privacy">Mikrofon hanya merekam saat <b>Start</b>. Rekaman dan skor diproses di browser, tidak diunggah, dan hilang saat halaman ditutup.</p>
+      </section>
+    </div>
+    <section id="historySection" class="local-score-section" hidden><div id="practiceStandings"></div><details class="history"><summary id="summary">Rincian tiap ronde</summary><ol id="history"></ol></details></section>
+    <section class="library"><div class="section-title"><h2>Empat suara. Satu panggung.</h2><span>Preview sebelum mulai</span></div><div id="samples" class="sample-grid"></div></section>
+    <details class="notes"><summary>Cara main & info latihan</summary><p><b>Skor latihan 0–100, bukan ukuran akurasi AI.</b> Party menilai kontur nada relatif (60%) dan ritme (40%). Jika nada referensi tidak cukup terdeteksi, bobot beralih ke warna suara (60%) dan ritme (40%); rincian bobot tampil setelah rekaman.</p><p>Transkrip Jepang belum diverifikasi: kata tidak dinilai dan model transkripsi tidak diunduh. Efek: &lt;50 roast ringan, 50–99 tepuk tangan, 100 fanfare.</p><p><b>Hanya di laptop ini.</b> Latihan satu pemain ini terpisah dari matchmaking. Multiplayer tetap custom 2–8 pemain penuh atau solo matchmaking 8 pemain. Sample Bleach di situs publik tetap draft, belum diaktifkan. Buka halaman lokal ini di Chrome/Safari pada laptop; URL loopback ini bukan tautan untuk HP teman.</p></details>
+  </main>
+  <footer>MIMIC / MAKE SOME NOISE. <span>Local practice · no login · no paid API</span></footer>
+</body>
+</html>

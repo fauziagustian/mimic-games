@@ -1,7 +1,7 @@
 # User-provided Bleach audio
 
-Four MP3 clips supplied by the site owner, converted without trimming to mono PCM16 16 kHz WAV. Original files in Downloads were not changed. These are not original MIMIC or CC0 audio; public-use permission is unconfirmed.
+The owner supplied four Bleach MP3 recordings and confirmed permission to use them in the public game on 2026-10-28. The originals in Downloads were not changed. The project includes mono PCM16 16 kHz WAV conversions in `private-assets/samples/` and their metadata in `private-assets/sample-collections.json`.
 
-Manifest transcripts are **unverified automatic Whisper Base drafts** in Japanese, with obvious recognition errors. They are not canonical Bleach quotations or an approved scoring answer key. An admin must listen, correct the transcript and confirm the permission description before activation. All four sounds initially import as inactive and not ranked. Draft audio is served only to authenticated staff; no audio is copied into public static assets.
+These four sounds are active for casual Party matches under **Anime → Bleach**. Their displayed text is an unverified play hint. An admin must listen to each reference, correct the exact transcript, and mark it reviewed before using the sound for Precision word scoring or ranked matches.
 
-The build embeds the WAV bytes into the server-only content seed, then the first API request stores them in R2 and inserts catalog metadata idempotently. Later deployments never overwrite an admin's edits or reactivate disabled content. The `bleach-theme-pack-v1` config marker prevents reseeding. Source and deployment artifacts therefore contain the audio; keep access limited to project collaborators.
+The Netlify build embeds the WAV bytes in the server Function. Playback goes through an access-checked game route, so disabling a sound blocks new requests. The initial seed preserves later admin edits and disabled states. Audio already downloaded by a player cannot be recalled.

@@ -1,7 +1,8 @@
 # MIMIC — Admin Control Center
 
-Open `/admin` on the existing public Site, then sign in with the configured owner ChatGPT account. The page shell is public, but all administrative data and writes require server-verified staff identity. No shared admin password is used.
+Open /admin on the Netlify site. Before sharing its public URL, create the one-time Owner account with an email and a password of at least 12 characters. The first person to complete setup becomes Owner, so claim it yourself before inviting players. The page shell is public; all administrative data and writes require a valid server-side account session.
 
+Netlify accounts are local to this game. They do not require ChatGPT, GitHub, email verification, API keys, or environment variables. There is no password-reset flow, so save the Owner password. Casual matches remain available without signing in; /login registration is for competitive and creator features.
 ## Roles
 
 | Capability | Owner | Admin | Moderator |
@@ -12,7 +13,7 @@ Open `/admin` on the existing public Site, then sign in with the configured owne
 | Operational switches, room closure and metadata export | Yes | Yes | No |
 | Grant/revoke staff access | Yes | No | No |
 
-Existing emails in runtime `ADMIN_EMAILS` become protected **Owner** accounts. They cannot be removed or downgraded from the UI. Owner → Staff access can add an Admin or Moderator by the email on that person's ChatGPT account. No email invitation is sent. Disabling an entry revokes authorization on the next request; records and audit history remain. No additional staff accounts are created automatically by deploying this feature. Infrastructure secrets, the Site's public/private audience and the protected owner allowlist remain outside this in-game panel.
+The Netlify Owner is protected and cannot be removed or downgraded from the UI. Owner → Staff access can add an Admin or Moderator by the email that person used to register at /login. No email invitation is sent; ask them to create their account first, then grant access. Disabling an entry revokes authorization on the next request; records and audit history remain. The Owner account is created from the admin page, not from deployment configuration.
 
 ## Sections
 
@@ -44,18 +45,18 @@ Unsaved form edits warn before changing sections or leaving the page. Standard f
 
 ## Player-selected sounds
 
-The create-match page separates **Theme / main category** and **Subcategory**. Choose **Anime → All sounds in this theme** to combine eligible direct Anime sounds and its active children, or **Anime → Bleach** for that exact subcategory. The language/duration/active rules still apply. Empty or draft-only choices cannot create a room. Manual selection cannot include a clip from another theme. Solo queues are isolated by the exact selection and pool snapshot. Room labels are snapshotted so later renaming/reparenting does not relabel an existing match. Category metadata is stored in the existing D1 category JSON; legacy flat categories remain roots.
+The create-match page separates **Theme / main category** and **Subcategory**. Choose **Anime → All sounds in this theme** to combine eligible direct Anime sounds and its active children, or **Anime → Bleach** for that exact subcategory. The language/duration/active rules still apply. Empty or draft-only choices cannot create a room. Manual selection cannot include a clip from another theme. Solo queues are isolated by the exact selection and pool snapshot. Room labels are snapshotted so later renaming/reparenting does not relabel an existing match. Category metadata is stored in the Netlify Blobs-backed SQLite snapshot; legacy flat categories remain roots.
 
-Initial examples are **Anime → Bleach** and **Meme → Meme Lucu**. Add more through the panel; code changes are not required.
+Bundled playable examples are **Anime → Bleach**, **Meme → Meme Global**, and **Meme → Meme Indonesia**. **Meme → Meme Lucu** remains available for future uploads. Add more through the panel; code changes are not required.
 
-### Four imported Bleach drafts
+### Seventeen bundled sample sounds
 
-The supplied Shunsui, Ichigo, Shinji and Byakuya MP3 files are converted without cutting (approximately 11.0, 1.6, 4.9 and 5.8 seconds) and initially saved as inactive Japanese speech under **Anime → Bleach**, not ranked. These are user-supplied clips, not licensed/CC0 or original MIMIC audio. Public-use permission is unconfirmed. Their local Whisper Base drafts have recognition errors on Japanese names/terms and must not be treated as an approved word-scoring key.
+The owner confirmed public-use permission for four Bleach, nine global meme, and four Indonesian meme recordings on 2026-10-28. The source MP3s remain unchanged. The build bundles mono 16 kHz WAVs inside the Function, including three clips cut to 14.95 seconds. The first request seeds their categories and metadata as active, casual Party sounds; all are excluded from ranked. Public playback passes through the game API, so disabling a sound, category, or language blocks new audio requests.
 
-In **Sound library**, select each clip, listen, correct the transcript, replace the pending permission note with your actual permission details, and tick the two review confirmations before enabling **Publish in catalog**. The server enforces those confirmations for these imports. Do not check them without reviewing. Draft audio is available to authenticated staff, not public visitors, and is not a public static file. Imports are idempotent: redeploying never overwrites metadata edits or reactivates a sound. Disabling an imported sound, its category/parent or language revokes new public audio requests; already loaded copies cannot be recalled. The original files in Downloads are unchanged.
+Speech text is a play hint, not a verified exact transcript. The server excludes imported speech from Precision until an admin listens to each clip, corrects the text, and checks **Transcript reviewed** in **Sound library**. Ranked eligibility also requires that review. Do not check it without listening. Imports are idempotent: later deploys preserve admin edits and disabled states. Audio already loaded by a player cannot be recalled from that player's device.
 
 On `/create-match`, choose **Custom**, category/language and **Pick sounds (casual)**, then mark 1–50 active eligible clips. The host's pool is snapshotted into the room and shared by all participants. Ordering remains server-shuffled, without repeats until the pool is exhausted. Category, language and recording-duration limits still apply. Solo matchmaking always uses a random eligible pool and exactly 8 players; ranked rooms also reject custom pools. Disabling manual selection blocks newly created custom-pool rooms, not existing ones.
 
 ## Verification boundaries
 
-Automated local D1/R2 Worker tests cover roles, CSRF, stale/concurrent setting saves, history/audit, operation switches, manual pool validation/synchronization, room closure and metadata export. DOM test doubles check escaped website text, selection controls and retry behavior; they are not a real browser. Prior browser-control restrictions still prevent visual/browser QA. Real-device layout, production login with invited staff, physical microphone timing and multi-device play remain to be tested manually. Deployment success is verified separately through Sites.
+Legacy local Worker tests cover roles, CSRF, stale/concurrent setting saves, history/audit, operation switches, manual pool validation/synchronization, room closure and metadata export. The Netlify integration test completes a three-round, two-player game with strongly consistent Blob reads and ETag writes. Netlify CLI packages the Function successfully. The full Netlify build needs a linked site, so no live deployment is claimed. DOM test doubles are not a real browser; staff login, physical microphones, mobile layout and multi-device play still need real-device verification.

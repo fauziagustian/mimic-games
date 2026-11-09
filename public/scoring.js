@@ -61,7 +61,7 @@ function fftPower(input) {
     (_, i) => (re[i] * re[i] + im[i] * im[i]) / n,
   );
 }
-function pitch(frame, rms) {
+export function pitch(frame, rms) {
   if (rms < 0.006) return 0;
   const low = 32,
     high = 266,

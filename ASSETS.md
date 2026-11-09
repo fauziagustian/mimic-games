@@ -1,5 +1,14 @@
 # Asset credits and integration decisions
 
+## License boundaries
+
+The repository's [MIT license](LICENSE) covers original project source code. It does not grant an MIT license to recordings or third-party artwork.
+
+- The 17 owner-supplied Bleach and meme recordings in `private-assets/samples/` and the four local-practice copies in `private-assets/bleach/` were approved by the owner for use in this game. Their inclusion does not grant independent reuse or redistribution rights. Original filenames and source notes are in `private-assets/sample-collections.json` and `private-assets/bleach/manifest.json`.
+- Community-submitted recordings retain their creators' rights and are governed by the permissions given for each submission. They are not covered by the source-code MIT license.
+- Kenney Mini Characters remain CC0 under their own preserved `public/models/kenney/License.txt`.
+- Third-party dependencies retain their respective licenses; generated bundles preserve required notices.
+
 ## Included in the published game
 
 - **Kenney — Mini Characters 1.0**, user-provided ZIP. 12 GLB characters, their PNG previews and shared color-map texture. The archive's `License.txt` explicitly permits personal, educational and commercial use under **CC0**. Original license is preserved at `public/models/kenney/License.txt`. Creator: https://kenney.nl.

@@ -49,7 +49,7 @@ test('UGC: private upload → moderation → catalog/game → ranked curation �
       assert.equal((await call(item.url,{who:'creator'})).status,200);assert.equal((await call(item.url,{who:'admin'})).cache,'private, no-store');
       assert.equal((await call('/api/media/'+item.id)).status,404);
       assert.equal((await call('/api/community')).value.items.length,0);
-      assert.equal((await call('/api/catalog')).value.sounds.length,6);
+      assert.equal((await call('/api/catalog')).value.sounds.length,23);
       assert.equal((await post(`/api/admin/community/${item.id}/review`,'creator',{status:'approved',checked:true})).status,403);
       assert.equal((await review(item,'approved',{checked:false})).status,400);
       assert.equal((await review(item,'rejected',{note:''})).status,400);

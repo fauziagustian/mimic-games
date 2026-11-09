@@ -8,7 +8,7 @@ import * as matchRules from '../public/match-rules.js';
 import {categoryScope} from '../public/categories.js';
 import * as turns from '../public/turns.js';
 import {DEFAULT_SITE} from '../public/site-config.js';
-import {DEFAULT_RULES,CATEGORIES,LANGUAGES,SEED_SOUNDS} from '../public/catalog.js';
+import {DEFAULT_RULES,CATEGORIES,LANGUAGES,SEED_SOUNDS,soundEligibleForProfile} from '../public/catalog.js';
 import {t,escapeHTML as esc,categoryName,uiLanguage} from '../public/platform.js';
 import {runtime} from '../scripts/runtime.mjs';
 const catalog={categories:CATEGORIES,languages:LANGUAGES,sounds:SEED_SOUNDS,rules:DEFAULT_RULES};
@@ -58,7 +58,7 @@ test('navigation controller: character → create → lobby → room, invitation
   const app=nodes.get('#app'),joinButton=element(),avatarStates=[],calls=[];let rejectName=false;
   let mockRoom={code:'ABCDEF',phase:'lobby',revision:1,me:'a',host:true,categoryId:'drama',profile:'party',mode:'casual',rules:DEFAULT_RULES,players:[{id:'a',name:'Tester',total:0,ready:true,avatarId:'male-a'}],clips:[SEED_SOUNDS[0]],submitted:[],results:[],queue:[],round:0};
   const context=vm.createContext({
-    ...routing,...pages,...turns,...matchRules,categoryScope,t,esc,categoryName,uiLanguage,URL,URLSearchParams,Date,
+    ...routing,...pages,...turns,...matchRules,categoryScope,soundEligibleForProfile,t,esc,categoryName,uiLanguage,URL,URLSearchParams,Date,
     localStorage,sessionStorage:ss,location,history:{pushState(a,b,url){location.href=new URL(url,location).href;},replaceState(a,b,url){location.href=new URL(url,location).href;}},
     document:{querySelector:s=>s==='#joinForm button'?joinButton:nodes.get(s)||null,querySelectorAll:()=>[]},window:{scrollTo(){}},
     avatarStage:()=>({detach(){},sync(state){avatarStates.push(state);},mount(target,state){avatarStates.push(state);}}),avatarImage:()=>'',preferredAvatar:()=> 'male-a',

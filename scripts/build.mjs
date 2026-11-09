@@ -24,7 +24,7 @@ async function collect(directory,prefix=''){
 }
 await collect('dist/client');await writeFile('work/static-assets.json',JSON.stringify(files));
 await mkdir('dist/server',{recursive:true});
-await build({entryPoints:['server/index.js'],outfile:'dist/server/index.js',bundle:true,format:'esm',platform:'browser',target:'es2022',minify:false});
+await build({entryPoints:['server/worker.js'],outfile:'dist/server/index.js',bundle:true,format:'esm',platform:'browser',target:'es2022',minify:false});
 const wrangler={name:'mimic-sound-battle',main:'index.js',compatibility_date:'2026-05-15',assets:{directory:'../client',binding:'ASSETS',run_worker_first:true,html_handling:'none'},d1_databases:[{binding:'DB',database_name:'mimic-local',database_id:'00000000-0000-0000-0000-000000000001'}],r2_buckets:[{binding:'BUCKET',bucket_name:'mimic-local'}]};
 await writeFile('dist/server/wrangler.json',JSON.stringify(wrangler,null,2));
 await mkdir('dist/.openai',{recursive:true});

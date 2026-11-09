@@ -6,6 +6,7 @@ import {isSequential,isMyTurn,turnKey,mayCapture,turnCue} from '../public/turns.
 import {visualPose} from '../public/avatars.js';
 import {runtime} from '../scripts/runtime.mjs';
 import {gameRoute} from '../public/game-routing.js';
+import {rankPlayers,matchStandingsMarkup} from '../public/match-standings.js';
 
 const clockRoom=()=>({turnMode:'sequential-v1',turnIndex:0,round:1,phase:'listen',activePlayerId:'a',me:'a',listenAt:1000,readyAt:6000,recordAt:10000,endAt:15000});
 test('Ready → 3 → 2 → 1 → Start boundaries derive from the shared server clock',()=>{
@@ -30,7 +31,7 @@ test('client markup and tick: escaped active name, cue text and capture only for
     document:{querySelector:s=>elements.get(s)||null,createElement:el},Date:{now:()=>now},
     t:id=>id,esc:s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),
     uiLanguage:()=> 'id',avatarStage:()=>({sync(){},detach(){},mount(){}}),avatarImage:()=>'',categoryName:()=> 'Drama',
-    isSequential,isMyTurn,turnKey,mayCapture,turnCue,gameRoute,drawWave(){},stopAudio(){},
+    isSequential,isMyTurn,turnKey,mayCapture,turnCue,gameRoute,rankPlayers,matchStandingsMarkup,drawWave(){},stopAudio(){},
     sessionStorage:{getItem:k=>storage.get(k)},URLSearchParams,location:{origin:'https://mimic.test',href:'https://mimic.test/room/ABCDEF'},
   });
   vm.runInContext(source,context);
@@ -43,6 +44,13 @@ test('client markup and tick: escaped active name, cue text and capture only for
   now=10000;vm.runInContext('tick();tick()',context);assert.equal(elements.get('#countdown').textContent,'Start');assert.equal(captures,1);
   vm.runInContext("room={...room,turnIndex:1,activePlayerId:'b'};renderRoom(true);tick();",context);
   assert.equal(captures,1);assert.match(elements.get('#app').innerHTML,/Mikrofonmu tidak merekam/);
+  assert.doesNotMatch(elements.get('#app').innerHTML,/class="match-scoreboard/);
+  vm.runInContext("room={...room,phase:'results',activePlayerId:null,results:[{playerId:'a',total:45},{playerId:'b',total:80}],players:room.players.map((p,i)=>({...p,total:i?80:45})),nextAt:Date.now()+12000};renderRoom(true);tick();",context);
+  const board=elements.get('#app').innerHTML;
+  assert.match(board,/RONDE SELESAI/);assert.ok(board.indexOf('data-player-id="b"')<board.indexOf('data-player-id="a"'));
+  assert.match(board,/\+80 ronde ini/);assert.equal(elements.get('#countdown').textContent,'12s');assert.equal(captures,1);
+  vm.runInContext("room={...room,phase:'finished',players:room.players.map(p=>({...p,total:125}))};renderRoom(true);",context);
+  assert.match(elements.get('#app').innerHTML,/Juara bersama!/);assert.doesNotMatch(elements.get('#app').innerHTML,/Ronde berikutnya dalam/);
   vm.runInContext("room={...room,turnIndex:2,activePlayerId:'a'};location.href='https://mimic.test/choose-character';tick();",context);assert.equal(captures,1);
 });
 

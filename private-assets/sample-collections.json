@@ -1,0 +1,22 @@
+{
+  "permission": "Project owner confirmed public game use for these supplied recordings on 2026-10-28. Original source filenames are retained for attribution.",
+  "sounds": [
+    {"id":"bleach-shunsui-bankai","file":"bleach-shunsui-bankai.wav","original":"shunsui-bankai.mp3","title":"Shunsui · Bankai","text":"Bankai","categoryId":"bleach","language":"japanese","kind":"speech"},
+    {"id":"bleach-ichigo-bankai","file":"bleach-ichigo-bankai.wav","original":"ichigo-bankai_91wUa6g.mp3","title":"Ichigo · Bankai","text":"Bankai","categoryId":"bleach","language":"japanese","kind":"speech"},
+    {"id":"bleach-shinji-bankai","file":"bleach-shinji-bankai.wav","original":"bankai-shinji.mp3","title":"Shinji · Bankai","text":"Bankai","categoryId":"bleach","language":"japanese","kind":"speech"},
+    {"id":"bleach-byakuya-bankai","file":"bleach-byakuya-bankai.wav","original":"bankai-byakuya.mp3","title":"Byakuya · Bankai","text":"Bankai","categoryId":"bleach","language":"japanese","kind":"speech"},
+    {"id":"meme-global-wowow","file":"meme-global-wowow.wav","original":"freesound_community-wowowowowowowow-103214.mp3","title":"Wowowow","text":"","categoryId":"meme-global","language":"english","kind":"sound"},
+    {"id":"meme-global-ara-ara","file":"meme-global-ara-ara.wav","original":"miracle333-ara-ara-sound-effect-127279.mp3","title":"Ara ara","text":"Ara ara","categoryId":"meme-global","language":"japanese","kind":"speech"},
+    {"id":"meme-global-wow","file":"meme-global-wow.wav","original":"dragon-studio-wow-423653.mp3","title":"Wow!","text":"Wow","categoryId":"meme-global","language":"english","kind":"speech"},
+    {"id":"meme-global-yeah-boy","file":"meme-global-yeah-boy.wav","original":"universfield-yeah-boy-114748.mp3","title":"Yeah boy!","text":"Yeah boy","categoryId":"meme-global","language":"english","kind":"speech"},
+    {"id":"meme-global-6-7","file":"meme-global-6-7.wav","original":"6-_-7-watch-yo-jet-bro-446063.mp3","title":"6–7","text":"Six seven","categoryId":"meme-global","language":"english","kind":"speech"},
+    {"id":"meme-global-meow","file":"meme-global-meow.wav","original":"freesound_community-meow-to-an-egg-36412.mp3","title":"Meow","text":"","categoryId":"meme-global","language":"english","kind":"sound"},
+    {"id":"meme-global-omaga","file":"meme-global-omaga.wav","original":"u_qqgc1fle0j-omaga-rturr-version-242813.mp3","title":"Omaga","text":"Omaga","categoryId":"meme-global","language":"english","kind":"speech"},
+    {"id":"meme-global-anime-cat-girl","file":"meme-global-anime-cat-girl.wav","original":"freesound_community-anime-cat-girl-6731.mp3","title":"Anime cat girl","text":"","categoryId":"meme-global","language":"japanese","kind":"sound"},
+    {"id":"meme-global-anime-sounds","file":"meme-global-anime-sounds.wav","original":"freesound_community-anime-sounds-60614.mp3","title":"Anime sounds","text":"","categoryId":"meme-global","language":"japanese","kind":"sound"},
+    {"id":"meme-indonesia-antek-asing","file":"meme-indonesia-antek-asing.wav","original":"hey-antek-antek-asing-prabowo.mp3","title":"Antek-antek asing","text":"Hei, antek-antek asing","categoryId":"meme-indonesia","language":"indonesian","kind":"speech"},
+    {"id":"meme-indonesia-hidup-jokowi","file":"meme-indonesia-hidup-jokowi.wav","original":"hidup-jokowi.mp3","title":"Hidup Jokowi","text":"Hidup Jokowi","categoryId":"meme-indonesia","language":"indonesian","kind":"speech"},
+    {"id":"meme-indonesia-dulu-saya-diam","file":"meme-indonesia-dulu-saya-diam.wav","original":"jokowi-dulu-saya-diam.mp3","title":"Dulu saya diam","text":"Dulu saya diam","categoryId":"meme-indonesia","language":"indonesian","kind":"speech"},
+    {"id":"meme-indonesia-saya-akan-lawan","file":"meme-indonesia-saya-akan-lawan.wav","original":"jokowi-saya-akan-lawan.mp3","title":"Saya akan lawan","text":"Saya akan lawan","categoryId":"meme-indonesia","language":"indonesian","kind":"speech"}
+  ]
+}
